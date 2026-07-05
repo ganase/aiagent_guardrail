@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "0.1.0",
+  "owner": "AI Governance Team",
+  "default_action": "block_high_risk",
+  "dangerous_command_patterns": [
+    "rm\\s+-rf\\s+[/~]",
+    "Remove-Item\\s+.*(-Recurse).*(-Force)",
+    "del\\s+/s",
+    "format\\s+[A-Z]:",
+    "cipher\\s+/w",
+    "reg\\s+(add|delete)",
+    "netsh\\s+advfirewall",
+    "Set-ExecutionPolicy\\s+Unrestricted",
+    "powershell\\s+(-enc|-encodedcommand)",
+    "Invoke-Expression",
+    "curl\\s+.*\\|\\s*(sh|bash|powershell)",
+    "wget\\s+.*\\|\\s*(sh|bash|powershell)"
+  ],
+  "runtime_install_patterns": [
+    "winget\\s+install\\s+",
+    "choco\\s+install\\s+",
+    "scoop\\s+install\\s+",
+    "msiexec\\s+",
+    "npm\\s+install\\s+-g\\s+",
+    "pipx\\s+install\\s+"
+  ],
+  "package_install_patterns": {
+    "python": [
+      "pip\\s+install\\s+",
+      "python\\s+-m\\s+pip\\s+install\\s+",
+      "py\\s+-m\\s+pip\\s+install\\s+"
+    ],
+    "javascript": [
+      "npm\\s+(install|i)\\s+",
+      "yarn\\s+add\\s+",
+      "pnpm\\s+add\\s+"
+    ]
+  },
+  "blocked_paths": [
+    ".env",
+    ".env.*",
+    "secrets/**",
+    "*.pem",
+    "*.key",
+    "id_rsa",
+    "id_ed25519"
+  ],
+  "messages": {
+    "runtime_install": "プログラムランタイムやグローバルツールの導入は会社のソフトウェア導入許可リスト・指定手順に従ってください。AI Agentの提案だけで導入せず、AIガバナンスチームまたは管理者に相談してください。",
+    "package_not_allowed": "許可済みパッケージリストにないライブラリです。個人判断で導入せず、AIガバナンスチームまたは管理者に相談してください。",
+    "package_review": "このライブラリはreview扱いです。用途・バージョン・接続先を明記してAIガバナンスチームまたは管理者に相談してください。",
+    "dangerous_command": "危険なコマンドの可能性があるため停止しました。必要な場合はAIガバナンスチームまたは管理者に相談してください。"
+  }
+}

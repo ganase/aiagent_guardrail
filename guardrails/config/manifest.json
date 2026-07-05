@@ -1,0 +1,15 @@
+{
+  "product": "AI Agent Guardrail Standard Package",
+  "version": "0.1.0",
+  "owner": "AI Governance Team",
+  "updated_at": "2026-07-06",
+  "description": "Codex / Claude Code 標準導入用のガードレール・インストーラーパッケージ",
+  "components": {
+    "installer": "0.1.0",
+    "guardrail_policy": "0.1.0",
+    "package_allowlist": "0.1.0",
+    "runtime_policy": "0.1.0",
+    "hooks": "0.1.0",
+    "templates": "0.1.0"
+  }
+}

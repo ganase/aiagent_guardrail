@@ -1,0 +1,29 @@
+# Local environment and secrets
+.env
+.env.*
+secrets/
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Install/runtime outputs
+logs/
+**/logs/
+installed_hashes.csv
+*.bak.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

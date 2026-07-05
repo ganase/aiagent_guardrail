@@ -1,0 +1,10 @@
+# Codex Windows 標準設定テンプレート
+# 実際の配置先例: %USERPROFILE%\.codex\config.toml
+# 本ファイルは標準インストーラーが既存ファイルをバックアップしたうえで追記・配置する想定です。
+
+[windows]
+sandbox = "elevated"
+sandbox_private_desktop = true
+
+# ライブラリ導入は guardrails/bin の ai-pip / ai-npm を使う。
+# AGENTS.md にも同じ方針を記載します。

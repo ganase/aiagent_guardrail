@@ -1,0 +1,5 @@
+# Codex enterprise requirements template
+# 実際の配置先とサポート可否はCodexの管理者向け仕様に合わせて確認してください。
+
+[windows]
+allowed_sandbox_implementations = ["elevated"]

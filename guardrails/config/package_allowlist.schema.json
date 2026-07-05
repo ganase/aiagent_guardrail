@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Package Allowlist",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "allowlist_version", "updated_at", "owner", "description", "default_policy", "ecosystems"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "allowlist_version": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "owner": {"type": "string"},
+    "description": {"type": "string"},
+    "default_policy": {"const": "deny"},
+    "ecosystems": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "javascript"],
+      "properties": {
+        "python": {"$ref": "#/$defs/ecosystem"},
+        "javascript": {"$ref": "#/$defs/ecosystem"}
+      }
+    }
+  },
+  "$defs": {
+    "ecosystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package_manager", "packages"],
+      "properties": {
+        "package_manager": {"type": "string"},
+        "packages": {"type": "array", "items": {"$ref": "#/$defs/package"}}
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "allowed_versions", "risk_level", "reason", "reviewed_by", "reviewed_at"],
+      "properties": {
+        "name": {"type": "string"},
+        "status": {"enum": ["allow", "review", "deny"]},
+        "allowed_versions": {"type": "string"},
+        "risk_level": {"enum": ["low", "medium", "high", "unknown"]},
+        "reason": {"type": "string"},
+        "reviewed_by": {"type": "string"},
+        "reviewed_at": {"type": "string"},
+        "expires_at": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

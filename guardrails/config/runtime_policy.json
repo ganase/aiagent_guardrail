@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "0.1.0",
+  "owner": "AI Governance Team",
+  "description": "Python / Node.js / Git 等のプログラムランタイムは会社のソフトウェア導入許可リストに従う。",
+  "default_policy": "block_agent_install",
+  "runtime_install_commands": [
+    "winget install",
+    "choco install",
+    "scoop install",
+    "msiexec",
+    "npm install -g",
+    "pipx install"
+  ],
+  "message": "プログラムランタイムやグローバルツールの導入は会社のソフトウェア導入許可リスト・指定手順に従ってください。AI Agentの提案だけで導入せず、AIガバナンスチームまたは管理者に相談してください。"
+}
