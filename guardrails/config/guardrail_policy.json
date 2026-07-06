@@ -1,21 +1,30 @@
 {
-  "schema_version": "1.0.0",
-  "policy_version": "0.1.0",
+  "schema_version": "1.1.0",
+  "policy_version": "0.2.0",
   "owner": "AI Governance Team",
-  "default_action": "block_high_risk",
+  "default_action": "fail_closed",
   "dangerous_command_patterns": [
     "rm\\s+-rf\\s+[/~]",
-    "Remove-Item\\s+.*(-Recurse).*(-Force)",
-    "del\\s+/s",
+    "\\bdel\\b.*\\/s\\b",
+    "\\brd\\b.*\\/s\\b",
+    "\\brmdir\\b.*\\/s\\b",
     "format\\s+[A-Z]:",
     "cipher\\s+/w",
     "reg\\s+(add|delete)",
     "netsh\\s+advfirewall",
     "Set-ExecutionPolicy\\s+Unrestricted",
     "powershell\\s+(-enc|-encodedcommand)",
-    "Invoke-Expression",
+    "\\bpwsh\\s+(-e\\b|-enc\\b|-encodedcommand\\b)",
+    "\\bInvoke-Expression\\b",
+    "\\biex\\b",
+    "\\birm\\b.*\\|\\s*iex\\b",
+    "Invoke-WebRequest.*\\|\\s*(iex|Invoke-Expression)\\b",
     "curl\\s+.*\\|\\s*(sh|bash|powershell)",
-    "wget\\s+.*\\|\\s*(sh|bash|powershell)"
+    "wget\\s+.*\\|\\s*(sh|bash|powershell)",
+    "\\bSet-MpPreference\\b",
+    "\\bStop-Service\\b",
+    "\\bschtasks\\b.*\\/create\\b",
+    "\\bbitsadmin\\b.*\\/transfer\\b"
   ],
   "runtime_install_patterns": [
     "winget\\s+install\\s+",
@@ -27,14 +36,20 @@
   ],
   "package_install_patterns": {
     "python": [
-      "pip\\s+install\\s+",
-      "python\\s+-m\\s+pip\\s+install\\s+",
-      "py\\s+-m\\s+pip\\s+install\\s+"
+      "pip\\s+install\\b",
+      "pip3(\\.\\d+)?\\s+install\\b",
+      "python3?\\s+-m\\s+pip\\s+install\\b",
+      "py\\s+(-3\\s+)?-m\\s+pip\\s+install\\b",
+      "uv\\s+pip\\s+install\\b",
+      "uv\\s+add\\b",
+      "poetry\\s+add\\b",
+      "conda\\s+install\\b"
     ],
     "javascript": [
-      "npm\\s+(install|i)\\s+",
-      "yarn\\s+add\\s+",
-      "pnpm\\s+add\\s+"
+      "npm\\s+(install|i)\\b",
+      "npm\\s+ci\\b",
+      "yarn\\s+(add|install)\\b",
+      "pnpm\\s+(add|install)\\b"
     ]
   },
   "blocked_paths": [
@@ -48,8 +63,8 @@
   ],
   "messages": {
     "runtime_install": "プログラムランタイムやグローバルツールの導入は会社のソフトウェア導入許可リスト・指定手順に従ってください。AI Agentの提案だけで導入せず、AIガバナンスチームまたは管理者に相談してください。",
-    "package_not_allowed": "許可済みパッケージリストにないライブラリです。個人判断で導入せず、AIガバナンスチームまたは管理者に相談してください。",
-    "package_review": "このライブラリはreview扱いです。用途・バージョン・接続先を明記してAIガバナンスチームまたは管理者に相談してください。",
+    "package_not_allowed": "このパッケージは明示的に禁止されています。個人判断で導入せず、AIガバナンスチームまたは管理者に相談してください。",
+    "package_review": "このライブラリはreview扱いです。用途・バージョン・接続先を明記してAIガバナンスチームまたは管理者に承認を受けてください。",
     "dangerous_command": "危険なコマンドの可能性があるため停止しました。必要な場合はAIガバナンスチームまたは管理者に相談してください。"
   }
 }

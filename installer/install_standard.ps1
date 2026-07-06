@@ -23,18 +23,33 @@ if (-not $InstallRoot) {
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $PackageRoot "guardrails\*") -Destination $InstallRoot -Recurse -Force
 
+# C. ACL protection: Users get ReadAndExecute only; Administrators/SYSTEM get FullControl.
+# This prevents users from replacing guardrail_policy.json or package_allowlist.json.
+$Protected = $false
+if ($IsAdmin) {
+  try {
+    icacls $InstallRoot /inheritance:d /grant "BUILTIN\Administrators:(OI)(CI)F" /grant "NT AUTHORITY\SYSTEM:(OI)(CI)F" /deny "BUILTIN\Users:(OI)(CI)W" /T /Q 2>&1 | Out-Null
+    $Protected = $true
+    Write-Host "ACL設定完了: Users の書込権限を制限しました ($InstallRoot)"
+  } catch {
+    Write-Warning "ACL設定に失敗しました（スキップ）: $_"
+  }
+} else {
+  Write-Warning "管理者権限がないためACL保護を設定できません。非 admin 導入は評価用途限定です。設定ファイルはユーザーが変更可能な状態です。"
+}
+
 [Environment]::SetEnvironmentVariable("AIAGENT_GUARDRAIL_HOME", $InstallRoot, "User")
 $env:AIAGENT_GUARDRAIL_HOME = $InstallRoot
 
-# 検証
+# Validate allowlist
 python (Join-Path $InstallRoot "hooks\validate_allowlist.py") | Write-Host
 
-# ハッシュ記録
+# Hash recording
 $HashFile = Join-Path $InstallRoot "config\installed_hashes.csv"
 "file,sha256" | Set-Content -Encoding UTF8 $HashFile
-Get-ChildItem -Path $InstallRoot -Recurse -File | Where-Object { $_.FullName -notlike "*$HashFile" } | ForEach-Object {
+Get-ChildItem -Path $InstallRoot -Recurse -File | Where-Object { $_.FullName -notlike "*installed_hashes.csv" } | ForEach-Object {
   $hash = Get-FileHash -Algorithm SHA256 $_.FullName
-  $rel = $_.FullName.Substring($InstallRoot.Length).TrimStart('\\')
+  $rel = $_.FullName.Substring($InstallRoot.Length).TrimStart('\')
   "`"$rel`",$($hash.Hash)" | Add-Content -Encoding UTF8 $HashFile
 }
 
@@ -50,9 +65,12 @@ if ($ConfigureClaude) {
       Copy-Item $target "$target.bak.$(Get-Date -Format yyyyMMddHHmmss)"
     }
     $content = Get-Content $template -Raw
-    $content = $content.Replace("%AIAGENT_GUARDRAIL_HOME%", $InstallRoot.Replace("\", "\\"))
+    # Replace placeholder with JSON-escaped path (backslash -> double backslash for JSON)
+    $escapedRoot = $InstallRoot.Replace("\", "\\")
+    $content = $content.Replace("%AIAGENT_GUARDRAIL_HOME%", $escapedRoot)
     Set-Content -Path $target -Encoding UTF8 -Value $content
     Write-Host "Claude Code managed-settings を配置しました: $target"
+    Write-Host "Hook コマンドは run_guardrail_hook.cmd 経由（fail-closed）に変更済みです。"
   }
 }
 
@@ -80,10 +98,14 @@ if ($AddWrappersToUserPath) {
 $LogDir = Join-Path $InstallRoot "logs"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 $Log = Join-Path $LogDir "install_log.csv"
-if (-not (Test-Path $Log)) { "timestamp,user,install_root,admin,configure_claude,configure_codex" | Set-Content -Encoding UTF8 $Log }
-"$(Get-Date -Format o),$env:USERNAME,`"$InstallRoot`",$IsAdmin,$ConfigureClaude,$ConfigureCodex" | Add-Content -Encoding UTF8 $Log
+if (-not (Test-Path $Log)) { "timestamp,user,install_root,admin,configure_claude,configure_codex,protected" | Set-Content -Encoding UTF8 $Log }
+"$(Get-Date -Format o),$env:USERNAME,`"$InstallRoot`",$IsAdmin,$ConfigureClaude,$ConfigureCodex,$Protected" | Add-Content -Encoding UTF8 $Log
 
 Write-Host ""
-Write-Host "AI Agent Guardrails installed."
-Write-Host "InstallRoot: $InstallRoot"
+Write-Host "AI Agent Guardrails v0.2 installed."
+Write-Host "InstallRoot : $InstallRoot"
+Write-Host "ACL保護    : $Protected"
+if (-not $IsAdmin) {
+  Write-Warning "非 admin 導入です。ACL保護なし。運用は管理者による正式導入を推奨します。"
+}
 Write-Host "Next: .\installer\check_status.ps1 -InstallRoot `"$InstallRoot`""
