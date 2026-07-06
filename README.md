@@ -41,7 +41,7 @@ ai-pip install example-malicious-package # 禁止     → ブロック
 ## これだけは知っておくこと
 
 - **管理者権限での導入が原則必須**です（ACL 保護・Claude Code managed-settings の配置に必要）。非admin導入は評価用途限定で、業務利用（Level 3）には進めないでください。`check_status.ps1` の「ACL protection / install level」欄で確認できます。
-- **ガードレールは完全ではありません。** 文字列マッチである以上、`python -c` 経由などの回避策が原理的に存在します。詳細は [docs/既知の限界.md](docs/既知の限界.md)。
+- **ガードレールは完全ではありません。** 文字列マッチである以上、`python -c` 経由などの回避策が原理的に存在します。詳細は [docs/admin/既知の限界.md](docs/admin/既知の限界.md)。
 - **これは初期実装テンプレートです。** 本番展開前に、AI管理者・IT管理者・セキュリティ担当のレビューを受けてください。
 
 ---
@@ -59,13 +59,26 @@ ai-pip install example-malicious-package # 禁止     → ブロック
 
 ## もっと詳しく知りたいときは
 
+**AIを使う方（ユーザー）**
+
 | 知りたいこと | 参照先 |
 |---|---|
-| 導入手順の詳細・トラブル対応 | [docs/導入手順書.md](docs/導入手順書.md) |
-| ガードレールの設計・3層ポリシー | [docs/ガードレール設計.md](docs/ガードレール設計.md) |
-| 許可済みパッケージリストの運用 | [docs/許可済みパッケージリスト運用.md](docs/許可済みパッケージリスト運用.md) |
-| 既知の限界・恒久対策ロードマップ | [docs/既知の限界.md](docs/既知の限界.md) / [docs/必要な仕組み一覧.md](docs/必要な仕組み一覧.md) |
-| 利用者向けルール | [docs/利用ルールブック.md](docs/利用ルールブック.md) |
+| 守るべきルール・活用度レベル | [docs/user/利用ルールブック.md](docs/user/利用ルールブック.md) |
+| 導入手順の詳細・トラブル対応 | [docs/user/導入手順書.md](docs/user/導入手順書.md) |
+| コード管理・Bitbucket 保存 | [docs/user/コード管理ルール.md](docs/user/コード管理ルール.md) |
+
+**環境を管理する方（管理者）**
+
+| 知りたいこと | 参照先 |
+|---|---|
+| リスクと設計方針の全体像 | [docs/admin/運用設計書.md](docs/admin/運用設計書.md) |
+| ガードレールの設計・3層ポリシー | [docs/admin/ガードレール設計.md](docs/admin/ガードレール設計.md) |
+| 許可済みパッケージリストの運用 | [docs/admin/許可済みパッケージリスト運用.md](docs/admin/許可済みパッケージリスト運用.md) |
+| 既知の限界・恒久対策ロードマップ | [docs/admin/既知の限界.md](docs/admin/既知の限界.md) |
+| 未実装項目・優先度 | [docs/admin/必要な仕組み一覧.md](docs/admin/必要な仕組み一覧.md) |
+
+| その他 | 参照先 |
+|---|---|
 | 変更履歴 | [CHANGELOG.md](CHANGELOG.md) |
 | 文書一覧（全体像） | [docs/README.md](docs/README.md) |
 
