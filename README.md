@@ -25,7 +25,10 @@ Windows 11 環境で Codex / Claude Code などのコーディングエージェ
 ## ディレクトリ構成
 
 ```text
+SETUP.bat                    # ★ ダブルクリックで起動する簡単インストーラー（GUI ウィザード）
+
 installer/
+  setup_wizard.ps1           # GUI ウィザード本体（SETUP.bat から自動起動）
   install_standard.bat
   install_standard.ps1       # ACL保護付きインストーラー
   uninstall_standard.ps1
@@ -66,6 +69,23 @@ CHANGELOG.md
 ```
 
 ## インストール方法
+
+### ★ 簡単インストール（一般ユーザー向け）
+
+1. GitHub からリポジトリを ZIP でダウンロードして解凍する
+2. 解凍したフォルダ内の **`SETUP.bat` をダブルクリック**する
+3. UAC（ユーザーアカウント制御）の確認画面が表示されたら「はい」を選択
+4. GUI ウィザードが起動するので、インストール先を確認して「インストール実行」をクリック
+
+```
+GitHub → ZIP ダウンロード → 解凍 → SETUP.bat ダブルクリック → GUIウィザード → インストール
+```
+
+デフォルトのインストール先: `C:\Users\<ユーザー名>\AIAgent\`
+
+---
+
+### コマンドライン（上級者・自動化向け）
 
 PowerShell を**管理者として**開き、リポジトリのルートで実行します。
 
