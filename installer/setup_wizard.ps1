@@ -11,7 +11,7 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # ---- Paths ----------------------------------------------------------------
-$repoRoot        = Split-Path -Parent $PSScriptRoot   # installer\ -> repo root
+$repoRoot        = Split-Path -Parent $PSScriptRoot
 $installerScript = Join-Path $PSScriptRoot "install_standard.ps1"
 
 if (-not (Test-Path $installerScript)) {
@@ -25,19 +25,29 @@ if (-not (Test-Path $installerScript)) {
     exit 1
 }
 
-# ---- Environment checks ---------------------------------------------------
+# ---- Environment detection ------------------------------------------------
 function Test-IsAdmin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     ([Security.Principal.WindowsPrincipal]$id).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
 }
-
-function Test-Python {
-    $null -ne (Get-Command python -ErrorAction SilentlyContinue)
+function Test-Command([string]$name) {
+    $null -ne (Get-Command $name -ErrorAction SilentlyContinue)
 }
 
-$isAdmin   = Test-IsAdmin
-$hasPython = Test-Python
+$isAdmin       = Test-IsAdmin
+$hasNode       = Test-Command "node"
+$hasNpm        = Test-Command "npm"
+$hasPython     = Test-Command "python"
+$hasClaude     = Test-Command "claude"
+$hasCodex      = Test-Command "codex"
+
+$nodeVer   = if ($hasNode)   { (node --version 2>$null) -replace '^v','' } else { $null }
+$claudeVer = if ($hasClaude) {
+    $v = (claude --version 2>$null); if ($v) { "$v" } else { "検出済み" }
+} else { $null }
+$codexVer  = if ($hasCodex)  { "検出済み" } else { $null }
+
 $defaultInstallPath = Join-Path $env:USERPROFILE "AIAgent"
 
 # ---- Design tokens --------------------------------------------------------
@@ -53,25 +63,27 @@ $clrDoneFg    = [System.Drawing.Color]::White
 $clrFail      = [System.Drawing.Color]::FromArgb(180, 40, 40)
 $clrDisabled  = [System.Drawing.Color]::FromArgb(190, 190, 190)
 $clrDisabledFg = [System.Drawing.Color]::FromArgb(120, 120, 120)
+$clrWarn      = [System.Drawing.Color]::FromArgb(255, 248, 230)
+$clrWarnBorder = [System.Drawing.Color]::FromArgb(255, 193, 7)
 
-# Japanese-compatible fonts
 $fntTitle = New-Object System.Drawing.Font("Meiryo UI", 14, [System.Drawing.FontStyle]::Bold)
 $fntSub   = New-Object System.Drawing.Font("Meiryo UI",  9)
 $fntUI    = New-Object System.Drawing.Font("Meiryo UI",  9)
+$fntSmall = New-Object System.Drawing.Font("Meiryo UI",  8)
 $fntBtn   = New-Object System.Drawing.Font("Meiryo UI", 11, [System.Drawing.FontStyle]::Bold)
 $fntLog   = New-Object System.Drawing.Font("Consolas",   9)
 
 # ---- Form -----------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text            = "AI Agent Guardrail セットアップ v0.2"
-$form.Size            = New-Object System.Drawing.Size(600, 760)
+$form.Size            = New-Object System.Drawing.Size(600, 870)
 $form.StartPosition   = "CenterScreen"
 $form.FormBorderStyle = "FixedSingle"
 $form.MaximizeBox     = $false
 $form.BackColor       = $clrBg
 $form.Font            = $fntUI
 
-# ---- Header panel ---------------------------------------------------------
+# ---- Header ---------------------------------------------------------------
 $pnlHeader = New-Object System.Windows.Forms.Panel
 $pnlHeader.Location  = New-Object System.Drawing.Point(0, 0)
 $pnlHeader.Size      = New-Object System.Drawing.Size(600, 82)
@@ -94,19 +106,115 @@ $lblSub.Location  = New-Object System.Drawing.Point(18, 50)
 $lblSub.AutoSize  = $true
 $pnlHeader.Controls.Add($lblSub)
 
+# ---- Tool detection strip -------------------------------------------------
+$pnlDetect = New-Object System.Windows.Forms.Panel
+$pnlDetect.Location    = New-Object System.Drawing.Point(14, 96)
+$pnlDetect.Size        = New-Object System.Drawing.Size(562, 68)
+$pnlDetect.BackColor   = $clrWhite
+$pnlDetect.BorderStyle = "FixedSingle"
+$form.Controls.Add($pnlDetect)
+
+function New-StatusLabel([string]$text, [System.Drawing.Color]$color, [int]$x, [int]$y) {
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text      = $text
+    $lbl.ForeColor = $color
+    $lbl.Font      = $fntSmall
+    $lbl.Location  = New-Object System.Drawing.Point($x, $y)
+    $lbl.AutoSize  = $true
+    $lbl
+}
+
+# Row 1: Node.js / Claude Code / Codex
+$nodeIcon  = if ($hasNode)   { "[OK]" } else { "[!]" }
+$nodeColor = if ($hasNode)   { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::Red }
+$nodeText  = if ($hasNode)   { "Node.js v$nodeVer" } else { "Node.js 未検出" }
+
+$claudeIcon  = if ($hasClaude) { "[OK]" } else { "[!]" }
+$claudeColor = if ($hasClaude) { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
+$claudeText  = if ($hasClaude) { "Claude Code $claudeVer" } else { "Claude Code 未検出" }
+
+$codexIcon  = if ($hasCodex) { "[OK]" } else { "[!]" }
+$codexColor = if ($hasCodex) { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
+$codexText  = if ($hasCodex) { "Codex $codexVer" } else { "Codex 未検出" }
+
+$pnlDetect.Controls.Add((New-StatusLabel "$nodeIcon  $nodeText"   $nodeColor   8 6))
+$pnlDetect.Controls.Add((New-StatusLabel "$claudeIcon  $claudeText" $claudeColor 8 26))
+$pnlDetect.Controls.Add((New-StatusLabel "$codexIcon  $codexText"   $codexColor  8 46))
+
+# Row 1 right: admin / python
+$adminIcon  = if ($isAdmin)   { "[OK]" } else { "[!]" }
+$adminColor = if ($isAdmin)   { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
+$adminText  = if ($isAdmin)   { "管理者権限あり" } else { "管理者権限なし（制限あり）" }
+
+$pyIcon  = if ($hasPython) { "[OK]" } else { "[!]" }
+$pyColor = if ($hasPython) { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
+$pyText  = if ($hasPython) { "Python 検出済み" } else { "Python 未検出" }
+
+$pnlDetect.Controls.Add((New-StatusLabel "$adminIcon  $adminText" $adminColor 320 6))
+$pnlDetect.Controls.Add((New-StatusLabel "$pyIcon  $pyText"       $pyColor   320 26))
+
+# Node.js warning
+if (-not $hasNode) {
+    $lblNodeWarn = New-Object System.Windows.Forms.Label
+    $lblNodeWarn.Text      = "  Node.js が見つかりません。Claude Code / Codex のインストールには Node.js が必要です。"
+    $lblNodeWarn.Font      = $fntSmall
+    $lblNodeWarn.ForeColor = [System.Drawing.Color]::FromArgb(120, 80, 0)
+    $lblNodeWarn.Location  = New-Object System.Drawing.Point(320, 46)
+    $lblNodeWarn.AutoSize  = $true
+    $pnlDetect.Controls.Add($lblNodeWarn)
+}
+
+# ---- Group: AI tool installation ------------------------------------------
+$gbTools = New-Object System.Windows.Forms.GroupBox
+$gbTools.Text      = "  AI ツール  "
+$gbTools.Location  = New-Object System.Drawing.Point(14, 174)
+$gbTools.Size      = New-Object System.Drawing.Size(562, 84)
+$gbTools.BackColor = $clrWhite
+$form.Controls.Add($gbTools)
+
+# Claude Code checkbox
+$cbInstClaude = New-Object System.Windows.Forms.CheckBox
+if ($hasClaude) {
+    $cbInstClaude.Text    = "Claude Code  ─  インストール済み（スキップ）"
+    $cbInstClaude.Checked = $false
+    $cbInstClaude.Enabled = $false
+} else {
+    $cbInstClaude.Text    = "Claude Code をインストールする  （npm install -g @anthropic-ai/claude-code）"
+    $cbInstClaude.Checked = $hasNode   # auto-check only if Node.js present
+    $cbInstClaude.Enabled = $hasNode
+}
+$cbInstClaude.Location = New-Object System.Drawing.Point(12, 24)
+$cbInstClaude.Size     = New-Object System.Drawing.Size(538, 22)
+$gbTools.Controls.Add($cbInstClaude)
+
+# Codex checkbox
+$cbInstCodex = New-Object System.Windows.Forms.CheckBox
+if ($hasCodex) {
+    $cbInstCodex.Text    = "Codex  ─  インストール済み（スキップ）"
+    $cbInstCodex.Checked = $false
+    $cbInstCodex.Enabled = $false
+} else {
+    $cbInstCodex.Text    = "Codex をインストールする  （npm install -g @openai/codex）"
+    $cbInstCodex.Checked = $hasNode
+    $cbInstCodex.Enabled = $hasNode
+}
+$cbInstCodex.Location = New-Object System.Drawing.Point(12, 52)
+$cbInstCodex.Size     = New-Object System.Drawing.Size(538, 22)
+$gbTools.Controls.Add($cbInstCodex)
+
 # ---- Group: Install path --------------------------------------------------
 $gbPath = New-Object System.Windows.Forms.GroupBox
 $gbPath.Text      = "  インストール先  "
-$gbPath.Location  = New-Object System.Drawing.Point(14, 98)
+$gbPath.Location  = New-Object System.Drawing.Point(14, 268)
 $gbPath.Size      = New-Object System.Drawing.Size(562, 74)
 $gbPath.BackColor = $clrWhite
 $form.Controls.Add($gbPath)
 
-$lblPathLabel = New-Object System.Windows.Forms.Label
-$lblPathLabel.Text     = "インストール先フォルダ:"
-$lblPathLabel.Location = New-Object System.Drawing.Point(10, 20)
-$lblPathLabel.AutoSize = $true
-$gbPath.Controls.Add($lblPathLabel)
+$lblPathLbl = New-Object System.Windows.Forms.Label
+$lblPathLbl.Text     = "インストール先フォルダ（ガードレール）:"
+$lblPathLbl.Location = New-Object System.Drawing.Point(10, 20)
+$lblPathLbl.AutoSize = $true
+$gbPath.Controls.Add($lblPathLbl)
 
 $tbPath = New-Object System.Windows.Forms.TextBox
 $tbPath.Text     = $defaultInstallPath
@@ -115,9 +223,9 @@ $tbPath.Size     = New-Object System.Drawing.Size(440, 22)
 $gbPath.Controls.Add($tbPath)
 
 $btnBrowse = New-Object System.Windows.Forms.Button
-$btnBrowse.Text     = "参照..."
-$btnBrowse.Location = New-Object System.Drawing.Point(458, 40)
-$btnBrowse.Size     = New-Object System.Drawing.Size(90, 26)
+$btnBrowse.Text      = "参照..."
+$btnBrowse.Location  = New-Object System.Drawing.Point(458, 40)
+$btnBrowse.Size      = New-Object System.Drawing.Size(90, 26)
 $btnBrowse.FlatStyle = "System"
 $gbPath.Controls.Add($btnBrowse)
 
@@ -133,10 +241,10 @@ $btnBrowse.Add_Click({
     }
 })
 
-# ---- Group: Options -------------------------------------------------------
+# ---- Group: Guardrail options ---------------------------------------------
 $gbOpts = New-Object System.Windows.Forms.GroupBox
-$gbOpts.Text      = "  設定オプション  "
-$gbOpts.Location  = New-Object System.Drawing.Point(14, 182)
+$gbOpts.Text      = "  ガードレール設定  "
+$gbOpts.Location  = New-Object System.Drawing.Point(14, 352)
 $gbOpts.Size      = New-Object System.Drawing.Size(562, 112)
 $gbOpts.BackColor = $clrWhite
 $form.Controls.Add($gbOpts)
@@ -148,12 +256,12 @@ $cbClaude.Location = New-Object System.Drawing.Point(12, 24)
 $cbClaude.Size     = New-Object System.Drawing.Size(540, 22)
 $gbOpts.Controls.Add($cbClaude)
 
-$cbCodex = New-Object System.Windows.Forms.CheckBox
-$cbCodex.Text     = "Codex の設定を配置する（.codex/config.toml + requirements.toml）"
-$cbCodex.Checked  = $false
-$cbCodex.Location = New-Object System.Drawing.Point(12, 52)
-$cbCodex.Size     = New-Object System.Drawing.Size(540, 22)
-$gbOpts.Controls.Add($cbCodex)
+$cbCodexConfig = New-Object System.Windows.Forms.CheckBox
+$cbCodexConfig.Text     = "Codex の設定を配置する（.codex/config.toml + requirements.toml）"
+$cbCodexConfig.Checked  = $false
+$cbCodexConfig.Location = New-Object System.Drawing.Point(12, 52)
+$cbCodexConfig.Size     = New-Object System.Drawing.Size(540, 22)
+$gbOpts.Controls.Add($cbCodexConfig)
 
 $cbAddPath = New-Object System.Windows.Forms.CheckBox
 $cbAddPath.Text     = "ai-pip / ai-npm をユーザー PATH に追加する"
@@ -162,42 +270,19 @@ $cbAddPath.Location = New-Object System.Drawing.Point(12, 80)
 $cbAddPath.Size     = New-Object System.Drawing.Size(540, 22)
 $gbOpts.Controls.Add($cbAddPath)
 
-# ---- Status indicator panel -----------------------------------------------
-$pnlStatus = New-Object System.Windows.Forms.Panel
-$pnlStatus.Location    = New-Object System.Drawing.Point(14, 304)
-$pnlStatus.Size        = New-Object System.Drawing.Size(562, 52)
-$pnlStatus.BackColor   = $clrWhite
-$pnlStatus.BorderStyle = "FixedSingle"
-$form.Controls.Add($pnlStatus)
-
-$adminIcon  = if ($isAdmin)   { "[OK]" } else { "[!]" }
-$adminColor = if ($isAdmin)   { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
-$adminText  = if ($isAdmin)   { "管理者権限あり  -  ACL保護・システム配置が有効です" } `
-                              else { "管理者権限なし  -  ACL保護なし・一部機能が制限されます" }
-
-$lblAdmin = New-Object System.Windows.Forms.Label
-$lblAdmin.Text      = "$adminIcon  $adminText"
-$lblAdmin.Location  = New-Object System.Drawing.Point(8, 6)
-$lblAdmin.AutoSize  = $true
-$lblAdmin.ForeColor = $adminColor
-$pnlStatus.Controls.Add($lblAdmin)
-
-$pyIcon  = if ($hasPython) { "[OK]" } else { "[!]" }
-$pyColor = if ($hasPython) { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
-$pyText  = if ($hasPython) { "Python 検出済み" } `
-                           else { "Python 未検出  -  ガードレールの一部機能（スモークテスト等）に Python が必要です" }
-
-$lblPy = New-Object System.Windows.Forms.Label
-$lblPy.Text      = "$pyIcon  $pyText"
-$lblPy.Location  = New-Object System.Drawing.Point(8, 28)
-$lblPy.AutoSize  = $true
-$lblPy.ForeColor = $pyColor
-$pnlStatus.Controls.Add($lblPy)
+# ---- Notes label (fixed install destination) ------------------------------
+$lblNote = New-Object System.Windows.Forms.Label
+$lblNote.Text      = "Claude Code のバイナリ（~\.local\bin\claude.exe）と設定（~\.claude\）はツール側が管理するため、移動できません。"
+$lblNote.Font      = $fntSmall
+$lblNote.ForeColor = [System.Drawing.Color]::Gray
+$lblNote.Location  = New-Object System.Drawing.Point(14, 474)
+$lblNote.Size      = New-Object System.Drawing.Size(562, 30)
+$form.Controls.Add($lblNote)
 
 # ---- Install button -------------------------------------------------------
 $btnInstall = New-Object System.Windows.Forms.Button
 $btnInstall.Text      = "インストール実行"
-$btnInstall.Location  = New-Object System.Drawing.Point(14, 370)
+$btnInstall.Location  = New-Object System.Drawing.Point(14, 510)
 $btnInstall.Size      = New-Object System.Drawing.Size(562, 52)
 $btnInstall.Font      = $fntBtn
 $btnInstall.BackColor = $clrInstall
@@ -210,13 +295,13 @@ $form.Controls.Add($btnInstall)
 # ---- Log area -------------------------------------------------------------
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text     = "インストールログ:"
-$lblLog.Location = New-Object System.Drawing.Point(14, 435)
+$lblLog.Location = New-Object System.Drawing.Point(14, 574)
 $lblLog.AutoSize = $true
 $form.Controls.Add($lblLog)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location    = New-Object System.Drawing.Point(14, 455)
-$rtbLog.Size        = New-Object System.Drawing.Size(562, 196)
+$rtbLog.Location    = New-Object System.Drawing.Point(14, 594)
+$rtbLog.Size        = New-Object System.Drawing.Size(562, 186)
 $rtbLog.Font        = $fntLog
 $rtbLog.ReadOnly    = $true
 $rtbLog.BackColor   = $clrWhite
@@ -225,11 +310,11 @@ $rtbLog.ScrollBars  = "Vertical"
 $rtbLog.Text        = "「インストール実行」をクリックするとここにログが表示されます。`n"
 $form.Controls.Add($rtbLog)
 
-# ---- Done / Close button --------------------------------------------------
+# ---- Done button ----------------------------------------------------------
 $btnDone = New-Object System.Windows.Forms.Button
 $btnDone.Text      = "（インストール完了後に有効になります）"
-$btnDone.Location  = New-Object System.Drawing.Point(14, 664)
-$btnDone.Size      = New-Object System.Drawing.Size(562, 40)
+$btnDone.Location  = New-Object System.Drawing.Point(14, 792)
+$btnDone.Size      = New-Object System.Drawing.Size(562, 38)
 $btnDone.Font      = $fntUI
 $btnDone.Enabled   = $false
 $btnDone.FlatStyle = "Flat"
@@ -251,8 +336,7 @@ function AppendLog {
         [System.Drawing.Color]$color = [System.Drawing.Color]::Black
     )
     if ([string]::IsNullOrEmpty($text)) {
-        $rtbLog.AppendText("`n")
-        return
+        $rtbLog.AppendText("`n"); return
     }
     $rtbLog.SelectionStart  = $rtbLog.TextLength
     $rtbLog.SelectionLength = 0
@@ -263,14 +347,17 @@ function AppendLog {
 }
 
 function Get-LineColor([string]$line) {
-    if ($line -match "WARNING:|WARN:|非 admin|管理者権限がない|ACL設定に失敗|制限されます") {
+    if ($line -match "WARNING:|WARN:|非 admin|管理者権限がない|ACL設定に失敗|制限されます|npm warn") {
         return [System.Drawing.Color]::DarkOrange
     }
-    if ($line -match "エラー|[Ee]rror|FAIL|failed|Exception|Cannot|拒否|不一致") {
+    if ($line -match "エラー|[Ee]rror|FAIL|failed|Exception|Cannot|npm ERR") {
         return [System.Drawing.Color]::Red
     }
-    if ($line -match "完了|installed|追加しました|配置しました|ACL設定完了|OK|成功|hash") {
+    if ($line -match "完了|installed|added \d+|追加しました|配置しました|ACL設定完了|OK|成功|hash") {
         return [System.Drawing.Color]::DarkGreen
+    }
+    if ($line -match "^===") {
+        return [System.Drawing.Color]::DarkBlue
     }
     return [System.Drawing.Color]::Black
 }
@@ -294,35 +381,77 @@ $btnInstall.Add_Click({
     $btnInstall.BackColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
     $btnBrowse.Enabled    = $false
     $tbPath.ReadOnly      = $true
+    $cbInstClaude.Enabled  = $false
+    $cbInstCodex.Enabled   = $false
     $cbClaude.Enabled     = $false
-    $cbCodex.Enabled      = $false
+    $cbCodexConfig.Enabled = $false
     $cbAddPath.Enabled    = $false
 
     $rtbLog.Clear()
-    AppendLog "=== AI Agent Guardrail インストール開始 ===" ([System.Drawing.Color]::DarkBlue)
-    AppendLog "インストール先 : $installPath"
+    AppendLog "=== AI Agent Guardrail セットアップ開始 ===" ([System.Drawing.Color]::DarkBlue)
+    AppendLog "ガードレール先 : $installPath"
     AppendLog "管理者権限    : $(if ($isAdmin) { 'あり' } else { 'なし（制限あり）' })"
-    AppendLog "Claude 設定    : $($cbClaude.Checked)"
-    AppendLog "Codex 設定     : $($cbCodex.Checked)"
-    AppendLog "PATH 追加      : $($cbAddPath.Checked)"
     AppendLog ""
 
-    # Snapshot options (capture values before closure)
-    $snap_script   = $installerScript
-    $snap_path     = $installPath
-    $snap_claude   = $cbClaude.Checked
-    $snap_codex    = $cbCodex.Checked
-    $snap_addpath  = $cbAddPath.Checked
+    # Snapshot
+    $snap_script       = $installerScript
+    $snap_path         = $installPath
+    $snap_instClaude   = $cbInstClaude.Checked
+    $snap_instCodex    = $cbInstCodex.Checked
+    $snap_claude       = $cbClaude.Checked
+    $snap_codex        = $cbCodexConfig.Checked
+    $snap_addpath      = $cbAddPath.Checked
+    $snap_hasClaude    = $hasClaude
+    $snap_hasCodex     = $hasCodex
 
-    # Launch background job
+    # Background job
     $script:installJob = Start-Job -ScriptBlock {
         param(
             [string]$scriptPath,
             [string]$installRoot,
+            [bool]$instClaude,
+            [bool]$instCodex,
             [bool]$optClaude,
             [bool]$optCodex,
-            [bool]$optPath
+            [bool]$optPath,
+            [bool]$claudeDetected,
+            [bool]$codexDetected
         )
+
+        # ---- Step 1: Claude Code ----
+        if ($instClaude -and -not $claudeDetected) {
+            Write-Output "=== Claude Code のインストール ==="
+            Write-Output "npm install -g @anthropic-ai/claude-code を実行しています..."
+            & npm install -g @anthropic-ai/claude-code 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERROR: Claude Code のインストールに失敗しました (exit $LASTEXITCODE)"
+                exit 1
+            }
+            Write-Output "Claude Code のインストール完了"
+            Write-Output ""
+        } elseif ($claudeDetected) {
+            Write-Output "=== Claude Code: インストール済み（スキップ）==="
+            Write-Output ""
+        }
+
+        # ---- Step 2: Codex ----
+        if ($instCodex -and -not $codexDetected) {
+            Write-Output "=== Codex のインストール ==="
+            Write-Output "npm install -g @openai/codex を実行しています..."
+            & npm install -g @openai/codex 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERROR: Codex のインストールに失敗しました (exit $LASTEXITCODE)"
+                exit 1
+            }
+            Write-Output "Codex のインストール完了"
+            Write-Output ""
+        } elseif ($codexDetected) {
+            Write-Output "=== Codex: インストール済み（スキップ）==="
+            Write-Output ""
+        }
+
+        # ---- Step 3: Guardrail ----
+        Write-Output "=== ガードレールのインストール ==="
         $argList = @(
             "-NoProfile", "-ExecutionPolicy", "Bypass",
             "-File", $scriptPath,
@@ -331,11 +460,14 @@ $btnInstall.Add_Click({
         if ($optClaude) { $argList += "-ConfigureClaude" }
         if ($optCodex)  { $argList += "-ConfigureCodex" }
         if ($optPath)   { $argList += "-AddWrappersToUserPath" }
-
         & powershell.exe @argList 2>&1
-    } -ArgumentList $snap_script, $snap_path, $snap_claude, $snap_codex, $snap_addpath
 
-    # Poll timer: fetch job output every 400ms
+    } -ArgumentList $snap_script, $snap_path,
+                    $snap_instClaude, $snap_instCodex,
+                    $snap_claude, $snap_codex, $snap_addpath,
+                    $snap_hasClaude, $snap_hasCodex
+
+    # Poll timer
     $script:pollTimer = New-Object System.Windows.Forms.Timer
     $script:pollTimer.Interval = 400
     $script:pollTimer.Add_Tick({
@@ -353,13 +485,9 @@ $btnInstall.Add_Click({
             $script:pollTimer.Stop()
             $succeeded = ($script:installJob.State -eq 'Completed')
 
-            # Drain any remaining output
             try {
                 $final = @(Receive-Job $script:installJob -ErrorAction SilentlyContinue)
-                foreach ($raw in $final) {
-                    $txt = "$raw"
-                    AppendLog $txt (Get-LineColor $txt)
-                }
+                foreach ($raw in $final) { AppendLog "$raw" (Get-LineColor "$raw") }
             } catch { }
 
             Remove-Job $script:installJob -Force -ErrorAction SilentlyContinue
@@ -371,8 +499,8 @@ $btnInstall.Add_Click({
                 AppendLog "  インストール完了！" ([System.Drawing.Color]::DarkGreen)
                 AppendLog ""
                 AppendLog "  次のステップ:" ([System.Drawing.Color]::DarkGreen)
-                AppendLog "  1. Claude Code を再起動してください。" ([System.Drawing.Color]::DarkGreen)
-                AppendLog "  2. ガードレールが有効なことを確認: pip install pandas (hook が動作するか)" ([System.Drawing.Color]::DarkGreen)
+                AppendLog "  1. ターミナルを再起動して PATH を更新してください。" ([System.Drawing.Color]::DarkGreen)
+                AppendLog "  2. Claude Code を再起動してガードレールが有効か確認してください。" ([System.Drawing.Color]::DarkGreen)
                 AppendLog "============================================" ([System.Drawing.Color]::DarkGreen)
                 $btnDone.Text      = "閉じる"
                 $btnDone.BackColor = $clrDone
@@ -380,14 +508,14 @@ $btnInstall.Add_Click({
             } else {
                 AppendLog "============================================" ([System.Drawing.Color]::Red)
                 AppendLog "  インストール失敗" ([System.Drawing.Color]::Red)
-                AppendLog "  上記のログを確認し、管理者に連絡してください。" ([System.Drawing.Color]::Red)
+                AppendLog "  上記ログを確認し、管理者に連絡してください。" ([System.Drawing.Color]::Red)
                 AppendLog "============================================" ([System.Drawing.Color]::Red)
                 $btnDone.Text      = "閉じる"
                 $btnDone.BackColor = $clrFail
                 $btnDone.ForeColor = [System.Drawing.Color]::White
             }
-            $btnDone.Enabled   = $true
-            $btnDone.FlatAppearance.BorderSize = 0
+            $btnDone.Enabled                     = $true
+            $btnDone.FlatAppearance.BorderSize    = 0
         }
     })
     $script:pollTimer.Start()
@@ -401,7 +529,7 @@ $form.Add_FormClosing({
         $script:pollTimer = $null
     }
     if ($script:installJob -ne $null) {
-        Stop-Job  $script:installJob -ErrorAction SilentlyContinue
+        Stop-Job   $script:installJob -ErrorAction SilentlyContinue
         Remove-Job $script:installJob -Force -ErrorAction SilentlyContinue
         $script:installJob = $null
     }
