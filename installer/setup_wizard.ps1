@@ -175,11 +175,11 @@ $form.Controls.Add($gbTools)
 # Claude Code checkbox
 $cbInstClaude = New-Object System.Windows.Forms.CheckBox
 if ($hasClaude) {
-    $cbInstClaude.Text    = "Claude Code  ─  インストール済み（スキップ）"
+    $cbInstClaude.Text    = "Claude Code  ─  インストール済み（このステップはスキップされます）"
     $cbInstClaude.Checked = $false
     $cbInstClaude.Enabled = $false
 } else {
-    $cbInstClaude.Text    = "Claude Code をインストールする  （npm install -g @anthropic-ai/claude-code）"
+    $cbInstClaude.Text    = "Claude Code  ─  未インストール → セットアップ時にインストールします  (npm install -g @anthropic-ai/claude-code)"
     $cbInstClaude.Checked = $hasNode   # auto-check only if Node.js present
     $cbInstClaude.Enabled = $hasNode
 }
@@ -190,11 +190,11 @@ $gbTools.Controls.Add($cbInstClaude)
 # Codex checkbox
 $cbInstCodex = New-Object System.Windows.Forms.CheckBox
 if ($hasCodex) {
-    $cbInstCodex.Text    = "Codex  ─  インストール済み（スキップ）"
+    $cbInstCodex.Text    = "Codex  ─  インストール済み（このステップはスキップされます）"
     $cbInstCodex.Checked = $false
     $cbInstCodex.Enabled = $false
 } else {
-    $cbInstCodex.Text    = "Codex をインストールする  （npm install -g @openai/codex）"
+    $cbInstCodex.Text    = "Codex  ─  未インストール → セットアップ時にインストールします  (npm install -g @openai/codex)"
     $cbInstCodex.Checked = $hasNode
     $cbInstCodex.Enabled = $hasNode
 }
@@ -258,14 +258,14 @@ $gbOpts.Controls.Add($cbClaude)
 
 $cbCodexConfig = New-Object System.Windows.Forms.CheckBox
 $cbCodexConfig.Text     = "Codex の設定を配置する（.codex/config.toml + requirements.toml）"
-$cbCodexConfig.Checked  = $false
+$cbCodexConfig.Checked  = $true
 $cbCodexConfig.Location = New-Object System.Drawing.Point(12, 52)
 $cbCodexConfig.Size     = New-Object System.Drawing.Size(540, 22)
 $gbOpts.Controls.Add($cbCodexConfig)
 
 $cbAddPath = New-Object System.Windows.Forms.CheckBox
 $cbAddPath.Text     = "ai-pip / ai-npm をユーザー PATH に追加する"
-$cbAddPath.Checked  = $false
+$cbAddPath.Checked  = $true
 $cbAddPath.Location = New-Object System.Drawing.Point(12, 80)
 $cbAddPath.Size     = New-Object System.Drawing.Size(540, 22)
 $gbOpts.Controls.Add($cbAddPath)
