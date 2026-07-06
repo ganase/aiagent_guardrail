@@ -27,3 +27,7 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# Claude Code local settings (machine-specific, must not be in a public template)
+.claude/settings.local.json
+.claude/settings.json
