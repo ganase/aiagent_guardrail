@@ -41,6 +41,7 @@ $hasNpm        = Test-Command "npm"
 $hasPython     = Test-Command "python"
 $hasClaude     = Test-Command "claude"
 $hasCodex      = Test-Command "codex"
+$hasWinget     = Test-Command "winget"
 
 $nodeVer   = if ($hasNode)   { (node --version 2>$null) -replace '^v','' } else { $null }
 $claudeVer = if ($hasClaude) {
@@ -76,7 +77,7 @@ $fntLog   = New-Object System.Drawing.Font("Consolas",   9)
 # ---- Form -----------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text            = "AI Agent Guardrail セットアップ v0.2"
-$form.Size            = New-Object System.Drawing.Size(600, 870)
+$form.Size            = New-Object System.Drawing.Size(600, 930)
 $form.StartPosition   = "CenterScreen"
 $form.FormBorderStyle = "FixedSingle"
 $form.MaximizeBox     = $false
@@ -164,13 +165,51 @@ if (-not $hasNode) {
     $pnlDetect.Controls.Add($lblNodeWarn)
 }
 
-# ---- Group: AI tool installation ------------------------------------------
+# ---- Group: Runtime / AI tool installation --------------------------------
 $gbTools = New-Object System.Windows.Forms.GroupBox
-$gbTools.Text      = "  AI ツール  "
+$gbTools.Text      = "  ランタイム / AI ツール  "
 $gbTools.Location  = New-Object System.Drawing.Point(14, 174)
-$gbTools.Size      = New-Object System.Drawing.Size(562, 84)
+$gbTools.Size      = New-Object System.Drawing.Size(562, 144)
 $gbTools.BackColor = $clrWhite
 $form.Controls.Add($gbTools)
+
+# Node.js checkbox (winget) — prerequisite for Claude Code / Codex npm install
+$cbInstNode = New-Object System.Windows.Forms.CheckBox
+if ($hasNode) {
+    $cbInstNode.Text    = "Node.js  ─  検出済み（インストール不要）"
+    $cbInstNode.Checked = $false
+    $cbInstNode.Enabled = $false
+} elseif (-not $hasWinget) {
+    $cbInstNode.Text    = "Node.js  ─  未インストール（winget も未検出のため自動導入できません。手動で導入してください）"
+    $cbInstNode.Checked = $false
+    $cbInstNode.Enabled = $false
+} else {
+    $cbInstNode.Text    = "Node.js  ─  未インストール → セットアップ時にインストールします  (winget install OpenJS.NodeJS.LTS)"
+    $cbInstNode.Checked = $true
+    $cbInstNode.Enabled = $true
+}
+$cbInstNode.Location = New-Object System.Drawing.Point(12, 24)
+$cbInstNode.Size     = New-Object System.Drawing.Size(538, 22)
+$gbTools.Controls.Add($cbInstNode)
+
+# Python checkbox (winget) — prerequisite for the guardrail hook itself
+$cbInstPython = New-Object System.Windows.Forms.CheckBox
+if ($hasPython) {
+    $cbInstPython.Text    = "Python  ─  検出済み（インストール不要）"
+    $cbInstPython.Checked = $false
+    $cbInstPython.Enabled = $false
+} elseif (-not $hasWinget) {
+    $cbInstPython.Text    = "Python  ─  未インストール（winget も未検出のため自動導入できません。手動で導入してください）"
+    $cbInstPython.Checked = $false
+    $cbInstPython.Enabled = $false
+} else {
+    $cbInstPython.Text    = "Python  ─  未インストール → セットアップ時にインストールします  (winget install Python.Python.3.12)"
+    $cbInstPython.Checked = $true
+    $cbInstPython.Enabled = $true
+}
+$cbInstPython.Location = New-Object System.Drawing.Point(12, 52)
+$cbInstPython.Size     = New-Object System.Drawing.Size(538, 22)
+$gbTools.Controls.Add($cbInstPython)
 
 # Claude Code checkbox
 $cbInstClaude = New-Object System.Windows.Forms.CheckBox
@@ -180,10 +219,10 @@ if ($hasClaude) {
     $cbInstClaude.Enabled = $false
 } else {
     $cbInstClaude.Text    = "Claude Code  ─  未インストール → セットアップ時にインストールします  (npm install -g @anthropic-ai/claude-code)"
-    $cbInstClaude.Checked = $hasNode   # auto-check only if Node.js present
-    $cbInstClaude.Enabled = $hasNode
+    $cbInstClaude.Checked = $true
+    $cbInstClaude.Enabled = $true
 }
-$cbInstClaude.Location = New-Object System.Drawing.Point(12, 24)
+$cbInstClaude.Location = New-Object System.Drawing.Point(12, 80)
 $cbInstClaude.Size     = New-Object System.Drawing.Size(538, 22)
 $gbTools.Controls.Add($cbInstClaude)
 
@@ -195,17 +234,34 @@ if ($hasCodex) {
     $cbInstCodex.Enabled = $false
 } else {
     $cbInstCodex.Text    = "Codex  ─  未インストール → セットアップ時にインストールします  (npm install -g @openai/codex)"
-    $cbInstCodex.Checked = $hasNode
-    $cbInstCodex.Enabled = $hasNode
+    $cbInstCodex.Checked = $true
+    $cbInstCodex.Enabled = $true
 }
-$cbInstCodex.Location = New-Object System.Drawing.Point(12, 52)
+$cbInstCodex.Location = New-Object System.Drawing.Point(12, 108)
 $cbInstCodex.Size     = New-Object System.Drawing.Size(538, 22)
 $gbTools.Controls.Add($cbInstCodex)
+
+# Claude Code / Codex need npm (Node.js). If Node.js is absent and the user
+# unchecks its auto-install box, disable the two npm-dependent checkboxes so
+# the install can't silently fail later for a reason the user can't see here.
+function Update-ClaudeCodexAvailability {
+    $nodeWillBeAvailable = $hasNode -or $cbInstNode.Checked
+    if (-not $hasClaude) {
+        $cbInstClaude.Enabled = $nodeWillBeAvailable
+        if (-not $nodeWillBeAvailable) { $cbInstClaude.Checked = $false }
+    }
+    if (-not $hasCodex) {
+        $cbInstCodex.Enabled = $nodeWillBeAvailable
+        if (-not $nodeWillBeAvailable) { $cbInstCodex.Checked = $false }
+    }
+}
+$cbInstNode.Add_CheckedChanged({ Update-ClaudeCodexAvailability })
+Update-ClaudeCodexAvailability
 
 # ---- Group: Install path --------------------------------------------------
 $gbPath = New-Object System.Windows.Forms.GroupBox
 $gbPath.Text      = "  インストール先  "
-$gbPath.Location  = New-Object System.Drawing.Point(14, 268)
+$gbPath.Location  = New-Object System.Drawing.Point(14, 328)
 $gbPath.Size      = New-Object System.Drawing.Size(562, 74)
 $gbPath.BackColor = $clrWhite
 $form.Controls.Add($gbPath)
@@ -244,7 +300,7 @@ $btnBrowse.Add_Click({
 # ---- Group: Guardrail options ---------------------------------------------
 $gbOpts = New-Object System.Windows.Forms.GroupBox
 $gbOpts.Text      = "  ガードレール設定  "
-$gbOpts.Location  = New-Object System.Drawing.Point(14, 352)
+$gbOpts.Location  = New-Object System.Drawing.Point(14, 412)
 $gbOpts.Size      = New-Object System.Drawing.Size(562, 112)
 $gbOpts.BackColor = $clrWhite
 $form.Controls.Add($gbOpts)
@@ -275,14 +331,14 @@ $lblNote = New-Object System.Windows.Forms.Label
 $lblNote.Text      = "Claude Code のバイナリ（~\.local\bin\claude.exe）と設定（~\.claude\）はツール側が管理するため、移動できません。"
 $lblNote.Font      = $fntSmall
 $lblNote.ForeColor = [System.Drawing.Color]::Gray
-$lblNote.Location  = New-Object System.Drawing.Point(14, 474)
+$lblNote.Location  = New-Object System.Drawing.Point(14, 534)
 $lblNote.Size      = New-Object System.Drawing.Size(562, 30)
 $form.Controls.Add($lblNote)
 
 # ---- Install button -------------------------------------------------------
 $btnInstall = New-Object System.Windows.Forms.Button
 $btnInstall.Text      = "インストール実行"
-$btnInstall.Location  = New-Object System.Drawing.Point(14, 510)
+$btnInstall.Location  = New-Object System.Drawing.Point(14, 570)
 $btnInstall.Size      = New-Object System.Drawing.Size(562, 52)
 $btnInstall.Font      = $fntBtn
 $btnInstall.BackColor = $clrInstall
@@ -295,12 +351,12 @@ $form.Controls.Add($btnInstall)
 # ---- Log area -------------------------------------------------------------
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text     = "インストールログ:"
-$lblLog.Location = New-Object System.Drawing.Point(14, 574)
+$lblLog.Location = New-Object System.Drawing.Point(14, 634)
 $lblLog.AutoSize = $true
 $form.Controls.Add($lblLog)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location    = New-Object System.Drawing.Point(14, 594)
+$rtbLog.Location    = New-Object System.Drawing.Point(14, 654)
 $rtbLog.Size        = New-Object System.Drawing.Size(562, 186)
 $rtbLog.Font        = $fntLog
 $rtbLog.ReadOnly    = $true
@@ -313,7 +369,7 @@ $form.Controls.Add($rtbLog)
 # ---- Done button ----------------------------------------------------------
 $btnDone = New-Object System.Windows.Forms.Button
 $btnDone.Text      = "（インストール完了後に有効になります）"
-$btnDone.Location  = New-Object System.Drawing.Point(14, 792)
+$btnDone.Location  = New-Object System.Drawing.Point(14, 852)
 $btnDone.Size      = New-Object System.Drawing.Size(562, 38)
 $btnDone.Font      = $fntUI
 $btnDone.Enabled   = $false
@@ -381,6 +437,8 @@ $btnInstall.Add_Click({
     $btnInstall.BackColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
     $btnBrowse.Enabled    = $false
     $tbPath.ReadOnly      = $true
+    $cbInstNode.Enabled    = $false
+    $cbInstPython.Enabled  = $false
     $cbInstClaude.Enabled  = $false
     $cbInstCodex.Enabled   = $false
     $cbClaude.Enabled     = $false
@@ -396,11 +454,15 @@ $btnInstall.Add_Click({
     # Snapshot
     $snap_script       = $installerScript
     $snap_path         = $installPath
+    $snap_instNode     = $cbInstNode.Checked
+    $snap_instPython   = $cbInstPython.Checked
     $snap_instClaude   = $cbInstClaude.Checked
     $snap_instCodex    = $cbInstCodex.Checked
     $snap_claude       = $cbClaude.Checked
     $snap_codex        = $cbCodexConfig.Checked
     $snap_addpath      = $cbAddPath.Checked
+    $snap_hasNode      = $hasNode
+    $snap_hasPython    = $hasPython
     $snap_hasClaude    = $hasClaude
     $snap_hasCodex     = $hasCodex
 
@@ -409,14 +471,67 @@ $btnInstall.Add_Click({
         param(
             [string]$scriptPath,
             [string]$installRoot,
+            [bool]$instNode,
+            [bool]$instPython,
             [bool]$instClaude,
             [bool]$instCodex,
             [bool]$optClaude,
             [bool]$optCodex,
             [bool]$optPath,
+            [bool]$nodeDetected,
+            [bool]$pythonDetected,
             [bool]$claudeDetected,
             [bool]$codexDetected
         )
+
+        # winget installs write PATH to the registry but don't update the
+        # current process's environment; re-read it so later steps in this
+        # same job (npm install -g, python validate_allowlist.py) can find
+        # the newly installed binaries without requiring a terminal restart.
+        function Update-SessionPath {
+            $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $user    = [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = "$machine;$user"
+        }
+
+        if ($instNode -or $instPython) {
+            Write-Output "注意: 管理者権限がない場合、Node.js/Pythonのインストールが権限不足で失敗することがあります。"
+            Write-Output ""
+        }
+
+        # ---- Step 0: Node.js (winget) ----
+        if ($instNode -and -not $nodeDetected) {
+            Write-Output "=== Node.js のインストール ==="
+            Write-Output "winget install --id OpenJS.NodeJS.LTS を実行しています..."
+            & winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERROR: Node.js のインストールに失敗しました (exit $LASTEXITCODE)"
+                exit 1
+            }
+            Update-SessionPath
+            Write-Output "Node.js のインストール完了"
+            Write-Output ""
+        } elseif ($nodeDetected) {
+            Write-Output "=== Node.js: 検出済み（スキップ）==="
+            Write-Output ""
+        }
+
+        # ---- Step 0.5: Python (winget) ----
+        if ($instPython -and -not $pythonDetected) {
+            Write-Output "=== Python のインストール ==="
+            Write-Output "winget install --id Python.Python.3.12 を実行しています..."
+            & winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERROR: Python のインストールに失敗しました (exit $LASTEXITCODE)"
+                exit 1
+            }
+            Update-SessionPath
+            Write-Output "Python のインストール完了"
+            Write-Output ""
+        } elseif ($pythonDetected) {
+            Write-Output "=== Python: 検出済み（スキップ）==="
+            Write-Output ""
+        }
 
         # ---- Step 1: Claude Code ----
         if ($instClaude -and -not $claudeDetected) {
@@ -463,8 +578,10 @@ $btnInstall.Add_Click({
         & powershell.exe @argList 2>&1
 
     } -ArgumentList $snap_script, $snap_path,
+                    $snap_instNode, $snap_instPython,
                     $snap_instClaude, $snap_instCodex,
                     $snap_claude, $snap_codex, $snap_addpath,
+                    $snap_hasNode, $snap_hasPython,
                     $snap_hasClaude, $snap_hasCodex
 
     # Poll timer

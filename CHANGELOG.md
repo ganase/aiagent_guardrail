@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v0.2.2 (2026-07-06)
+
+### New Features
+
+- **GUI ウィザードに Node.js / Python の自動導入を追加**: これまで Claude Code / Codex のみ対象だった「未導入なら自動インストール」の仕組みを、その前提となる Node.js（`winget install OpenJS.NodeJS.LTS`）と Python（`winget install Python.Python.3.12`）にも拡張。「ランタイム / AI ツール」欄に4つのチェックボックス（Node.js / Python / Claude Code / Codex）を表示し、未導入分のみ自動導入を提案する。
+- **winget 未検出時のフォールバック**: `winget` コマンド自体が見つからない環境では、Node.js/Pythonの自動導入チェックボックスを無効化し、手動導入を促すメッセージを表示する。
+- **依存関係を考慮したチェックボックス制御**: Claude Code / Codex は npm（Node.js）に依存するため、「Node.js を自動導入する」のチェックを外すと（かつ Node.js 未導入の場合）Claude Code / Codex のチェックボックスも自動的に無効化し、後工程での分かりにくい失敗を防ぐ。
+- **インストール順序**: Node.js → Python → Claude Code → Codex → ガードレール本体の順で導入し、winget インストール直後にプロセス内の `PATH` を再読込することで、同一ジョブ内の後続コマンド（`npm`、`python`）が新規導入したバイナリを認識できるようにした。
+
+### Documentation
+
+- `docs/導入手順書.md`: GUIウィザードの手順にランタイム自動導入の説明を追加。auto-installは個人試行・評価用途の簡易手段であり、部内業務利用（Level 3）では会社の指定手順を優先する旨を明記。
+- `README.md`: クイックスタートの手順にランタイム自動導入の一文を追加。
+
 ## v0.2.1 (2026-07-06)
 
 設計レビュー（実装 vs 設計文書の整合性チェック）で見つかった、公開ポリシー違反・設計との乖離・ドキュメント重複を修正。
