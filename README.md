@@ -1,204 +1,79 @@
 # aiagent_guardrail
 
-Windows 11 環境で Codex / Claude Code などのコーディングエージェントを企業利用するための、**汎用的な標準ガードレール・インストーラーのテンプレート**です。
+Windows 11 で Codex / Claude Code を企業利用するための、**標準ガードレール・インストーラーの公開テンプレート**です。
 
-本リポジトリは、特定企業の内部設定や秘密情報を含まない公開用テンプレートです。導入時は各社のソフトウェア導入ルール、セキュリティポリシー、ネットワーク制約に合わせて調整してください。
+AI エージェントは便利な反面、未承認パッケージの導入・危険なコマンドの実行・機密ファイルへのアクセスを意図せず提案することがあります。本ツールは、エージェントの操作を組織のポリシーに基づき審査・承認・抑止する仕組みを配布し、担当者が安心してエージェントを業務利用できる状態を作ります。
 
----
-
-## 目的
-
-AI エージェント（Claude Code、Codex 等）を企業の業務環境で安全・統一的に利用できるようにする。
-
-AI エージェントは強力な反面、未承認パッケージの導入・危険なコマンドの実行・機密ファイルへのアクセスを意図せず提案することがある。本ツールは、エージェントの行動に対して組織のポリシーに基づく審査・承認・抑止の仕組みを提供し、担当者が安心してエージェントを業務利用できる状態を作ることを目的とする。
+本リポジトリは特定企業の内部設定・秘密情報を含まない公開用テンプレートです。導入時は各社のルールに合わせて調整してください（社名・社内URL・実運用リストは含めない方針です）。
 
 ---
 
-## インストール方法
+## クイックスタート
 
-### ★ 簡単インストール（一般ユーザー向け）
+**一般ユーザー向け（推奨）**
 
 1. GitHub からリポジトリを ZIP でダウンロードして解凍する
 2. 解凍したフォルダ内の **`SETUP.bat` をダブルクリック**する
-3. UAC（ユーザーアカウント制御）の確認画面が表示されたら「はい」を選択
-4. GUI ウィザードが起動するので、インストール先を確認して「インストール実行」をクリック
-
-```
-GitHub → ZIP ダウンロード → 解凍 → SETUP.bat ダブルクリック → GUI ウィザード → インストール
-```
+3. UAC 画面で「はい」を選択する
+4. GUI ウィザードでインストール先を確認し「インストール実行」をクリックする
 
 デフォルトのインストール先: `C:\Users\<ユーザー名>\AIAgent\`
 
----
+**上級者・自動化向け（コマンドライン）**
 
-### コマンドライン（上級者・自動化向け）
-
-PowerShell を**管理者として**開き、リポジトリのルートで実行します。
+管理者 PowerShell でリポジトリのルートから実行します。
 
 ```powershell
 .\installer\install_standard.ps1 -ConfigureClaude -ConfigureCodex
 .\installer\check_status.ps1
 ```
 
-ユーザー PATH に `ai-pip` / `ai-npm` を追加する場合は、次のオプションを付けます。
+**導入後の動作確認**
 
 ```powershell
-.\installer\install_standard.ps1 -ConfigureClaude -ConfigureCodex -AddWrappersToUserPath
+ai-pip install pandas                    # 許可済み → 自動許可
+ai-pip install new-library               # 未知     → 人間承認ダイアログ
+ai-pip install example-malicious-package # 禁止     → ブロック
 ```
 
 ---
 
-## 何をするものか
+## これだけは知っておくこと
 
-| 目的 | 実装内容 |
+- **管理者権限での導入が原則必須**です（ACL 保護・Claude Code managed-settings の配置に必要）。非admin導入は評価用途限定で、業務利用（Level 3）には進めないでください。`check_status.ps1` の「ACL protection / install level」欄で確認できます。
+- **ガードレールは完全ではありません。** 文字列マッチである以上、`python -c` 経由などの回避策が原理的に存在します。詳細は [docs/既知の限界.md](docs/既知の限界.md)。
+- **これは初期実装テンプレートです。** 本番展開前に、AI管理者・IT管理者・セキュリティ担当のレビューを受けてください。
+
+---
+
+## 何をするものか（要約）
+
+- `pip install` / `npm install` 等を **allow（自動許可）/ ask（人間承認）/ deny（ブロック）** の3層で審査する
+- `iex`・`pwsh -enc`・`rm -rf` 等の危険コマンドと、`.env` / `*.pem` 等の機密ファイルアクセスを検知・ブロックする
+- fail-closed設計・ACL保護・起動時ハッシュ照合により、ガードレール自体の迂回・改ざんを防ぐ
+- Claude Code / Codex の標準設定をテンプレートとして一括配布し、組織全体で一貫させる
+
+仕組みの詳細・限界・設計判断は [docs/](docs/README.md) にまとめています。
+
+---
+
+## もっと詳しく知りたいときは
+
+| 知りたいこと | 参照先 |
 |---|---|
-| 未承認パッケージ導入リスクの低減 | `pip install` / `npm install` 等を allow（自動許可）/ ask（人間承認）/ deny（ブロック）の 3 層で審査。許可済みリスト外は必ず人間の承認を挟む |
-| 危険操作・悪意ある操作の抑止 | `iex`・`pwsh -enc`・`rm -rf` 等の危険コマンドをパターンマッチで検知・ブロック。`.env` / `*.pem` 等の機密ファイルへのアクセスも抑止 |
-| ガードレール自体の迂回・改ざん防止 | fail-closed 設計（設定破損・例外発生時も exit 2 でブロック）、ACL による設定ファイルの書込保護、起動時 SHA256 改ざん検知 |
-| AI エージェント設定の組織標準化 | Claude Code managed-settings / hook、Codex config をテンプレートとして一括配布し、組織全体で一貫した設定を維持する |
-| 導入・運用の省力化 | GUI ウィザード（SETUP.bat）による簡単インストール、スモークテスト付き動作確認、パッケージ判定の自動ログ記録 |
+| 導入手順の詳細・トラブル対応 | [docs/導入手順書.md](docs/導入手順書.md) |
+| ガードレールの設計・3層ポリシー | [docs/ガードレール設計.md](docs/ガードレール設計.md) |
+| 許可済みパッケージリストの運用 | [docs/許可済みパッケージリスト運用.md](docs/許可済みパッケージリスト運用.md) |
+| 既知の限界・恒久対策ロードマップ | [docs/既知の限界.md](docs/既知の限界.md) / [docs/必要な仕組み一覧.md](docs/必要な仕組み一覧.md) |
+| 利用者向けルール | [docs/利用ルールブック.md](docs/利用ルールブック.md) |
+| 変更履歴 | [CHANGELOG.md](CHANGELOG.md) |
+| 文書一覧（全体像） | [docs/README.md](docs/README.md) |
 
----
-
-## 重要な前提
-
-- これは初期実装テンプレートです。本番展開前に、AI 管理者、IT 管理者、セキュリティ担当のレビューを受けてください。
-- Python / Node.js / Git などのランタイム本体は、各社のソフトウェア導入許可リスト・指定手順に従って導入してください。
-- **管理者権限での導入を原則必須とします**（ACL 保護と Claude Code managed-settings のシステム配置に必要）。
-- 非 admin 導入は評価用途限定です。ACL 保護がなく、設定ファイルがユーザーによって改変可能な状態になります。
-
----
-
-## ディレクトリ構成
-
-```text
-SETUP.bat                    # ★ ダブルクリックで起動する簡単インストーラー（GUI ウィザード）
-
-installer/
-  setup_wizard.ps1           # GUI ウィザード本体（SETUP.bat から自動起動）
-  install_standard.bat
-  install_standard.ps1       # ACL 保護付きインストーラー
-  uninstall_standard.ps1
-  check_status.ps1           # スモークテスト付きステータス確認
-
-guardrails/
-  config/
-    manifest.json
-    guardrail_policy.json    # v0.2: パターン拡充（pip3/uv/poetry/conda/iex 等）
-    package_allowlist.json   # allow / review / deny の 3 区分
-    package_allowlist.schema.json
-    runtime_policy.json
-    claude_managed_settings.template.json
-    codex_config.template.toml
-    codex_requirements.template.toml
-  hooks/
-    aiagent_guardrail_check.py  # v0.2: 3 層ポリシー・fail-closed・改ざん検知等
-    run_guardrail_hook.cmd      # fail-closed ラッパー（Python 不在でも exit 2）
-    validate_allowlist.py
-  bin/
-    ai-pip.ps1 / ai-pip.bat
-    ai-npm.ps1 / ai-npm.bat
-  templates/
-    claude/CLAUDE.md
-    codex/AGENTS.md
-
-docs/
-  導入手順書.md
-  ガードレール設計.md
-  許可済みパッケージリスト運用.md
-  必要な仕組み一覧.md
-  既知の限界.md              # v0.2 新規: 実証済みの穴と恒久対策
-
-tests/
-  test_guardrail_check.py    # v0.2 新規: 28 ケースの回帰テスト
-
-CHANGELOG.md
-```
-
----
-
-## 動作確認
+**開発者向け:**
 
 ```powershell
-# 許可済みパッケージ → 自動許可（ダイアログなし）
-ai-pip install pandas
-
-# 未知パッケージ → 人間承認ダイアログ
-ai-pip install new-library
-
-# 禁止パッケージ → ブロック
-ai-pip install example-malicious-package
+python -m pytest tests/ -v                                                    # 回帰テスト
+python .\guardrails\hooks\validate_allowlist.py .\guardrails\config\package_allowlist.json  # 許可リスト検証
 ```
 
-## テスト実行
-
-```powershell
-python -m pytest tests/ -v
-```
-
-## 設定ファイルの確認
-
-```powershell
-python .\guardrails\hooks\validate_allowlist.py .\guardrails\config\package_allowlist.json
-```
-
----
-
-## v0.2 の主な変更点
-
-| 変更 | 内容 |
-|---|---|
-| fail-closed | hook 内部エラー・設定ファイル破損でも exit 2（ブロック）。exit 1 の素通りを排除 |
-| 信頼の起点固定 | claude-hook モードは `__file__` から config パスを導出。env 変数で偽 config に差し替え不可 |
-| 3 層ポリシー | deny（exit 2）/ allow（exit 0 + JSON allow）/ ask（exit 0 + JSON ask）。二重摩擦解消 |
-| typosquat 検出 | Levenshtein 距離 ≤ 2 で類似パッケージを deny |
-| パターン拡充 | pip3、uv add、uv pip、poetry add、conda、npm ci、yarn install、iex、pwsh -enc 等 |
-| requirements.txt 対応 | -r ファイル内パッケージを個別照合。社外レジストリ指定は deny |
-| npm 引数なし対応 | package.json を読んで各パッケージを照合 |
-| blocked_paths 実装 | cat .env / Get-Content secrets/key.pem 等を exit 2 でブロック |
-| Remove-Item | -Recurse と -Force の両方がどの順序でもブロック |
-| 改ざん検知 | installed_hashes.csv と SHA256 を起動時に照合 |
-| run_guardrail_hook.cmd | Python 不在でも exit 2（fail-closed ラッパー） |
-| ACL 保護 | admin 導入時に Users の書込権限を制限（icacls） |
-| 導入ログ | logs/package_decisions.csv に全判定を記録 |
-| 回帰テスト | tests/test_guardrail_check.py（28 ケース、全グリーン） |
-
----
-
-## 既知の限界
-
-**ガードレールは完全ではありません。** 主な限界:
-
-- **Codex 側に強制力なし**: AGENTS.md は助言。素の pip/npm は制限されません。
-- **文字列マッチの回避**: `python -c`、スクリプト経由は検知できません。
-- **推移的依存の未検査**: pandas が依存するライブラリは個別チェックされません。
-- **非 admin 導入時の改変可能性**: ACL なし。設定ファイルを書き換え可能。
-- **承認疲れ**: ask が頻出すると誤承認リスクが高まります。
-- **ユーザー自身のターミナル**: 直接実行は hook 対象外。
-
-詳細は [docs/既知の限界.md](docs/既知の限界.md) を参照してください。
-
-**恒久対策の最優先事項**: 社内 PyPI/npm ミラー + egress プロキシによるネットワーク境界の構築（[docs/必要な仕組み一覧.md](docs/必要な仕組み一覧.md) 参照）。
-
----
-
-## 公開用テンプレートとしての注意
-
-このリポジトリには、以下を含めない方針です。
-
-- 実在する社名、組織名、個人名
-- API キー、アクセストークン、秘密鍵、接続文字列
-- 社内 URL、社内リポジトリ URL、社内サーバー名
-- 実運用中の許可済みパッケージリスト
-- 顧客情報、本番データ、ログ本文
-
----
-
-## 次に整備するもの（ロードマップ）
-
-- **[最優先] 社内 PyPI/npm ミラー + egress プロキシ**（hook/ラッパーに依存しない一次防御）
-- 許可外ライブラリ申請フロー
-- MCP / Plugin 台帳
-- セルフ・セキュリティ・チェック連携
-- pip-audit / npm audit 定期スキャン
-- 導入ログ・ハートビート収集
+ディレクトリ構成は `installer/`（導入）・`guardrails/`（ガードレール本体）・`docs/`（設計・運用文書）・`tests/` の4つに分かれています。各ファイルの役割は上表のリンク先を参照してください。

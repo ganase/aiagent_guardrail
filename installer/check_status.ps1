@@ -95,6 +95,51 @@ $codex = Join-Path $env:USERPROFILE ".codex\config.toml"
 if (Test-Path $codex) { Write-Host "OK   Codex config: $codex" }
 else { Write-Host "INFO Codex config not found: $codex" }
 
+Write-Host ""
+Write-Host "--- Hash integrity check (installed_hashes.csv) ---"
 $hashFile = Join-Path $InstallRoot "config\installed_hashes.csv"
-if (Test-Path $hashFile) { Write-Host "OK   installed_hashes.csv exists" }
-else { Write-Host "INFO installed_hashes.csv not found (run installer to generate)" }
+if (Test-Path $hashFile) {
+  $rows = Import-Csv -Path $hashFile
+  $hashOk = $true
+  foreach ($row in $rows) {
+    $relPath = $row.file
+    $expected = $row.sha256
+    if (-not $relPath -or -not $expected) { continue }
+    $full = Join-Path $InstallRoot $relPath
+    if (-not (Test-Path $full)) {
+      Write-Host "NG   $relPath (ファイルが見つかりません)" -ForegroundColor Red
+      $hashOk = $false
+      continue
+    }
+    $actual = (Get-FileHash -Algorithm SHA256 $full).Hash
+    if ($actual -eq $expected) {
+      Write-Host "OK   $relPath"
+    } else {
+      Write-Host "NG   $relPath (ハッシュ不一致: 改ざんの可能性)" -ForegroundColor Red
+      $hashOk = $false
+    }
+  }
+  if ($hashOk) {
+    Write-Host "全ファイルのハッシュが installed_hashes.csv と一致しました。" -ForegroundColor Green
+  } else {
+    Write-Host "ハッシュ不一致のファイルがあります。改ざんの可能性があるため管理者に連絡してください。" -ForegroundColor Red
+    $allOk = $false
+  }
+} else {
+  Write-Host "INFO installed_hashes.csv not found (run installer to generate)"
+}
+
+Write-Host ""
+Write-Host "--- ACL protection / install level ---"
+$installLog = Join-Path $InstallRoot "logs\install_log.csv"
+if (Test-Path $installLog) {
+  $lastInstall = Import-Csv -Path $installLog | Select-Object -Last 1
+  if ($lastInstall.protected -eq "True") {
+    Write-Host "OK   ACL保護あり（管理者導入）。Level 3（部内業務利用）の前提を満たします。" -ForegroundColor Green
+  } else {
+    Write-Host "WARN ACL保護なし（非 admin 導入）。設定ファイルはユーザーが改変可能な状態です。" -ForegroundColor DarkYellow
+    Write-Host "     非 admin 導入は評価・開発環境用途に限定してください。Level 3（部内業務利用）には管理者による正式導入が必要です。" -ForegroundColor DarkYellow
+  }
+} else {
+  Write-Host "INFO install_log.csv not found (インストール状況を確認できません)"
+}

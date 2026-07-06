@@ -167,6 +167,14 @@ def test_deny_typosquat_pandsa(config_dir: Path) -> None:
     assert "pandsa" in err and "pandas" in err, "typosquat警告にpandasとpandsaを含むこと"
 
 
+def test_deny_typosquat_of_review_package(config_dir: Path) -> None:
+    """Typos of a review-status package (e.g. 'requests') must be caught too,
+    not just typos of allow-status packages."""
+    rc, _, err = _check("pip install reqeusts", "claude-hook", config_dir)
+    assert rc == 2
+    assert "reqeusts" in err and "requests" in err
+
+
 def test_ask_review_package(config_dir: Path) -> None:
     rc, out, _ = _check("pip install requests", "claude-hook", config_dir)
     assert rc == 0
@@ -276,6 +284,69 @@ def test_cat_env_example_is_allowed(config_dir: Path) -> None:
     assert rc == 0
 
 
+# ── expires_at enforcement ──────────────────────────────────────────────────────
+
+def test_expired_allow_package_becomes_ask(config_dir: Path) -> None:
+    allowlist = json.loads((config_dir / "package_allowlist.json").read_text(encoding="utf-8"))
+    allowlist["ecosystems"]["python"]["packages"].append(
+        {"name": "oldlib", "status": "allow", "reason": "期限切れテスト用", "expires_at": "2000-01-01"}
+    )
+    (config_dir / "package_allowlist.json").write_text(json.dumps(allowlist), encoding="utf-8")
+
+    rc, out, _ = _check("pip install oldlib", "claude-hook", config_dir)
+    assert rc == 0
+    assert _decision(out) == "ask"
+
+
+def test_unexpired_allow_package_stays_allow(config_dir: Path) -> None:
+    allowlist = json.loads((config_dir / "package_allowlist.json").read_text(encoding="utf-8"))
+    allowlist["ecosystems"]["python"]["packages"].append(
+        {"name": "freshlib", "status": "allow", "reason": "未期限テスト用", "expires_at": "2099-01-01"}
+    )
+    (config_dir / "package_allowlist.json").write_text(json.dumps(allowlist), encoding="utf-8")
+
+    rc, out, _ = _check("pip install freshlib", "claude-hook", config_dir)
+    assert rc == 0
+    assert _decision(out) == "allow"
+
+
+def test_allow_package_without_expires_at_stays_allow(config_dir: Path) -> None:
+    """Existing fixture packages have no expires_at field; must remain allow."""
+    rc, out, _ = _check("pip install pandas", "claude-hook", config_dir)
+    assert rc == 0
+    assert _decision(out) == "allow"
+
+
+def test_is_expired_malformed_date_treated_as_expired() -> None:
+    assert gc.is_expired("not-a-date") is True
+
+
+def test_is_expired_no_value_not_expired() -> None:
+    assert gc.is_expired(None) is False
+    assert gc.is_expired("") is False
+
+
+# ── runtime_policy.json wiring ─────────────────────────────────────────────────
+
+def test_runtime_policy_json_command_is_blocked(config_dir: Path) -> None:
+    """Editing runtime_policy.json's runtime_install_commands must actually change hook behavior."""
+    runtime_policy = {
+        "runtime_install_commands": ["brew install"],
+    }
+    (config_dir / "runtime_policy.json").write_text(json.dumps(runtime_policy), encoding="utf-8")
+
+    rc, _, err = _check("brew install node", "claude-hook", config_dir)
+    assert rc == 2
+    assert "ランタイム" in err or "brew" in err
+
+
+def test_missing_runtime_policy_json_does_not_break_hook(config_dir: Path) -> None:
+    """runtime_policy.json is optional; its absence must not affect unrelated commands."""
+    rc, out, _ = _check("pip install pandas", "claude-hook", config_dir)
+    assert rc == 0
+    assert _decision(out) == "allow"
+
+
 # ── C. Tamper detection ────────────────────────────────────────────────────────
 
 def test_tamper_detection_wrong_hash(config_dir: Path) -> None:
@@ -307,6 +378,42 @@ def test_tamper_detection_correct_hash(config_dir: Path) -> None:
     rc, out, _ = _check("pip install pandas", "claude-hook", config_dir)
     assert rc == 0
     assert _decision(out) == "allow"
+
+
+def test_tamper_detection_applies_in_cli_mode(config_dir: Path) -> None:
+    """Tamper detection must not be claude-hook-only; cli mode should also deny."""
+    policy_path = config_dir / "guardrail_policy.json"
+    correct_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest().upper()
+    wrong_hash = "AABBCCDD" + correct_hash[8:]
+
+    hashes_csv = config_dir / "installed_hashes.csv"
+    with open(hashes_csv, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["file", "sha256"])
+        writer.writerow(['"config\\guardrail_policy.json"', wrong_hash])
+
+    rc, _, err = _check("pip install pandas", "cli", config_dir)
+    assert rc == 1, "cli モードの改ざん検知は exit 1（非ブロッキングではなく拒否）になること"
+    assert "改ざん" in err
+
+
+def test_tamper_detection_covers_hook_script(config_dir: Path, tmp_path: Path) -> None:
+    """Tamper detection must also cover the hook script itself, not just config JSON."""
+    hooks_dir = tmp_path / "hooks"
+    hooks_dir.mkdir()
+    fake_hook = hooks_dir / "aiagent_guardrail_check.py"
+    fake_hook.write_text("# tampered", encoding="utf-8")
+    wrong_hash = "AABBCCDD" + "0" * 56
+
+    hashes_csv = config_dir / "installed_hashes.csv"
+    with open(hashes_csv, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["file", "sha256"])
+        writer.writerow(['"hooks\\aiagent_guardrail_check.py"', wrong_hash])
+
+    rc, _, err = _check("pip install pandas", "claude-hook", config_dir)
+    assert rc == 2
+    assert "改ざん" in err and "aiagent_guardrail_check.py" in err
 
 
 def test_no_hash_file_proceeds(config_dir: Path) -> None:

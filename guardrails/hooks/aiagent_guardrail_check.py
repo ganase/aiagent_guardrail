@@ -73,14 +73,26 @@ def levenshtein(a: str, b: str) -> int:
 # ── Tamper detection ───────────────────────────────────────────────────────────
 
 def verify_hashes(config_dir: Path) -> str | None:
-    """Return error string on hash mismatch, None if ok. Missing file = ok (dev env)."""
+    """Return error string on hash mismatch, None if ok. Missing file = ok (dev env).
+
+    Covers not only the policy/allowlist config files but also the hook script
+    itself, its cmd wrapper, and the agent templates, so that tampering with the
+    enforcement code (not just its config) is detected. Files absent from the
+    install (e.g. templates not deployed) are skipped rather than flagged.
+    """
     hash_file = config_dir / "installed_hashes.csv"
     if not hash_file.exists():
         return None
 
+    guardrails_dir = config_dir.parent
     targets = {
-        "guardrail_policy.json": config_dir / "guardrail_policy.json",
-        "package_allowlist.json": config_dir / "package_allowlist.json",
+        "config\\guardrail_policy.json": config_dir / "guardrail_policy.json",
+        "config\\package_allowlist.json": config_dir / "package_allowlist.json",
+        "config\\runtime_policy.json": config_dir / "runtime_policy.json",
+        "hooks\\aiagent_guardrail_check.py": guardrails_dir / "hooks" / "aiagent_guardrail_check.py",
+        "hooks\\run_guardrail_hook.cmd": guardrails_dir / "hooks" / "run_guardrail_hook.cmd",
+        "templates\\claude\\CLAUDE.md": guardrails_dir / "templates" / "claude" / "CLAUDE.md",
+        "templates\\codex\\AGENTS.md": guardrails_dir / "templates" / "codex" / "AGENTS.md",
     }
 
     try:
@@ -96,11 +108,10 @@ def verify_hashes(config_dir: Path) -> str | None:
     except Exception:
         return None  # Unreadable hash file: proceed with warning (not fatal)
 
-    for name, file_path in targets.items():
+    for rel, file_path in targets.items():
         if not file_path.exists():
             continue
-        rel = f"config\\{name}"
-        expected = stored.get(rel) or stored.get(f"config/{name}")
+        expected = stored.get(rel) or stored.get(rel.replace("\\", "/"))
         if expected is None:
             continue  # Not tracked yet
         actual = hashlib.sha256(file_path.read_bytes()).hexdigest().upper()
@@ -296,21 +307,46 @@ def lookup_package(allowlist: dict[str, Any], ecosystem: str, name: str) -> dict
     return None
 
 
-def all_allow_names(allowlist: dict[str, Any], ecosystem: str) -> list[str]:
+def all_known_names(allowlist: dict[str, Any], ecosystem: str) -> list[str]:
+    """Names worth typosquat-comparing against: allow (auto-trusted) and review
+    (already judged sensitive enough to need human sign-off) entries. A typo of
+    a review-status package (e.g. a browser-automation lib) deserves at least
+    the same scrutiny as a typo of an allow-status one, not the generic
+    'unknown package' ask treatment.
+    """
     packages = allowlist.get("ecosystems", {}).get(ecosystem, {}).get("packages", [])
-    return [normalize_name(p.get("name", "")) for p in packages if p.get("status") == "allow"]
+    return [
+        normalize_name(p.get("name", "")) for p in packages if p.get("status") in ("allow", "review")
+    ]
+
+
+# ── Allowlist entry expiry ──────────────────────────────────────────────────────
+
+def is_expired(expires_at: str | None) -> bool:
+    """
+    True if expires_at is a past date, or unparseable (fail-closed: route to
+    human review rather than silently trusting a malformed value). No
+    expires_at set means the entry does not expire.
+    """
+    if not expires_at or not str(expires_at).strip():
+        return False
+    try:
+        exp_date = datetime.date.fromisoformat(str(expires_at).strip())
+    except ValueError:
+        return True
+    return datetime.date.today() > exp_date
 
 
 # ── Typosquatting detection ────────────────────────────────────────────────────
 
 def check_typosquat(name: str, allowlist: dict[str, Any], ecosystem: str) -> str | None:
-    """Return similar allow-list name if typosquat suspected, else None."""
+    """Return similar known-list name if typosquat suspected, else None."""
     norm = normalize_name(name)
-    for allowed in all_allow_names(allowlist, ecosystem):
-        if allowed == norm:
+    for known in all_known_names(allowlist, ecosystem):
+        if known == norm:
             return None  # exact match – not a typosquat
-        if 1 <= levenshtein(norm, allowed) <= 2:
-            return allowed
+        if 1 <= levenshtein(norm, known) <= 2:
+            return known
     return None
 
 
@@ -527,7 +563,15 @@ def evaluate_packages(
                 )
                 log_decision(logs_dir, user, ecosystem, pkg_name, "ask(review)", command)
             else:  # allow
-                log_decision(logs_dir, user, ecosystem, pkg_name, "allow", command)
+                if is_expired(pkg_entry.get("expires_at")):
+                    ask_reasons.append(
+                        f"許可済みパッケージの確認期限が切れています: {pkg_name} "
+                        f"(expires_at={pkg_entry.get('expires_at')})\n"
+                        f"AIガバナンスチームまたは管理者に再審査を依頼してください。"
+                    )
+                    log_decision(logs_dir, user, ecosystem, pkg_name, "ask(expired)", command)
+                else:
+                    log_decision(logs_dir, user, ecosystem, pkg_name, "allow", command)
 
     if deny_reasons:
         return action_deny("\n---\n".join(deny_reasons), mode)
@@ -541,6 +585,32 @@ def evaluate_packages(
     )
 
 
+# ── runtime_policy.json wiring ─────────────────────────────────────────────────
+# runtime_policy.json holds literal command prefixes (company-runtime-list facing,
+# e.g. "npm install -g"), distinct from guardrail_policy.json's regex patterns.
+# Both are merged so editing either file actually changes hook behavior.
+
+def load_runtime_policy(config_dir: Path) -> dict[str, Any]:
+    path = config_dir / "runtime_policy.json"
+    if not path.exists():
+        return {}
+    try:
+        return load_json(path)
+    except Exception:
+        return {}
+
+
+def _command_to_pattern(cmd: str) -> str:
+    tokens = cmd.split()
+    return r"\s+".join(re.escape(t) for t in tokens) + r"\s+"
+
+
+def runtime_patterns_from_policy(runtime_policy: dict[str, Any]) -> list[str]:
+    return [
+        _command_to_pattern(c) for c in runtime_policy.get("runtime_install_commands", []) if c.strip()
+    ]
+
+
 # ── Core check logic ───────────────────────────────────────────────────────────
 
 def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
@@ -549,6 +619,7 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
 
     policy = load_json(config_dir / "guardrail_policy.json")
     allowlist = load_json(config_dir / "package_allowlist.json")
+    runtime_policy = load_runtime_policy(config_dir)
     logs_dir = config_dir.parent / "logs"
 
     try:
@@ -556,11 +627,10 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
     except Exception:
         user = "unknown"
 
-    # C. Tamper detection (claude-hook only; mismatch = exit 2)
-    if mode == "claude-hook":
-        err = verify_hashes(config_dir)
-        if err:
-            return action_deny(f"[改ざん検知] {err}", mode)
+    # C. Tamper detection (both modes; mismatch = exit 2 claude-hook / exit 1 cli)
+    err = verify_hashes(config_dir)
+    if err:
+        return action_deny(f"[改ざん検知] {err}", mode)
 
     # 1. Dangerous command patterns (JSON-defined)
     for pat in policy.get("dangerous_command_patterns", []):
@@ -592,8 +662,11 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
             mode,
         )
 
-    # 4. Runtime install patterns
-    for pat in policy.get("runtime_install_patterns", []):
+    # 4. Runtime install patterns (guardrail_policy.json regex + runtime_policy.json commands)
+    all_runtime_patterns = policy.get("runtime_install_patterns", []) + runtime_patterns_from_policy(
+        runtime_policy
+    )
+    for pat in all_runtime_patterns:
         if re.search(pat, command, re.IGNORECASE):
             return action_deny(
                 policy["messages"]["runtime_install"]
