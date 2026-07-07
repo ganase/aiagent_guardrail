@@ -94,9 +94,46 @@ Write-Host ""
 $claude = Join-Path $env:ProgramFiles "ClaudeCode\managed-settings.json"
 if (Test-Path $claude) { Write-Host "OK   Claude managed-settings: $claude" }
 else { Write-Host "INFO Claude managed-settings not found: $claude (run with -ConfigureClaude to install)" }
-$codex = Join-Path $env:USERPROFILE ".codex\config.toml"
-if (Test-Path $codex) { Write-Host "OK   Codex config: $codex" }
-else { Write-Host "INFO Codex config not found: $codex" }
+
+Write-Host ""
+Write-Host "--- Codex approval_policy check ---"
+$codexConfigPath = Join-Path $env:USERPROFILE ".codex\config.toml"
+if (Test-Path $codexConfigPath) {
+    Write-Host "OK   Codex config: $codexConfigPath"
+    try {
+        $tomlContent = Get-Content $codexConfigPath -Raw -Encoding UTF8
+        if ($tomlContent -match 'approval_policy\s*=\s*"([^"]+)"') {
+            $approvalPolicy = $Matches[1]
+            switch ($approvalPolicy) {
+                "manual" {
+                    Write-Host "OK   approval_policy = manual（全操作で人間確認あり）" -ForegroundColor Green
+                }
+                "on-failure" {
+                    Write-Host "INFO approval_policy = on-failure（失敗時のみ確認）" -ForegroundColor Yellow
+                    Write-Host "     コスト膨張・無限ループのリスクがあります。可能であれば manual を推奨します。" -ForegroundColor Yellow
+                }
+                "auto" {
+                    Write-Host "WARN approval_policy = auto（全操作を自動承認）" -ForegroundColor Red
+                    Write-Host "     コスト膨張・誤操作・無限ループのリスクが最大です。on-failure または manual への変更を推奨します。" -ForegroundColor Red
+                    $allOk = $false
+                }
+                default {
+                    Write-Host "INFO approval_policy = $approvalPolicy" -ForegroundColor Yellow
+                }
+            }
+        } else {
+            Write-Host "WARN approval_policy が config.toml に設定されていません（デフォルト = auto: 全操作自動承認）。" -ForegroundColor Yellow
+            Write-Host "     ~/.codex/config.toml に approval_policy = ""on-failure"" または ""manual"" を追加してください。" -ForegroundColor Yellow
+            $allOk = $false
+        }
+    } catch {
+        Write-Host "INFO config.toml の読み取りに失敗しました: $_"
+    }
+    Write-Host "INFO Codex は Hook 機構を持たないため、Hook 呼び出し回数制限（R9/R14 対策）の適用外です。" -ForegroundColor Yellow
+    Write-Host "     コスト膨張・無限ループは approval_policy と利用者自身の監視で対応してください。" -ForegroundColor Yellow
+} else {
+    Write-Host "INFO Codex config.toml 未検出: $codexConfigPath（Codex 未導入、または別パス）"
+}
 
 Write-Host ""
 Write-Host "--- Hook call rate counter (直近60分) ---"
