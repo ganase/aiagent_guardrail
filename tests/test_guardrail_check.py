@@ -42,9 +42,15 @@ POLICY = {
         "\\bbitsadmin\\b.*\\/transfer\\b",
     ],
     "runtime_install_patterns": [
-        "winget\\s+install\\s+",
+        "winget\\s+(install|upgrade|update)\\s+",
+        "choco\\s+(install|upgrade|update)\\s+",
+        "scoop\\s+(install|update)\\s+",
+        "msiexec\\s+",
         "npm\\s+install\\s+-g\\s+",
-        "pipx\\s+install\\s+",
+        "npm\\s+install\\s+.*\\s+-g\\b",
+        "npm\\s+update\\s+-g\\b",
+        "npm\\s+update\\s+.*\\s+-g\\b",
+        "pipx\\s+(install|upgrade|upgrade-all)\\b",
     ],
     "package_install_patterns": {
         "python": [
@@ -326,6 +332,22 @@ def test_is_expired_no_value_not_expired() -> None:
 
 
 # ── runtime_policy.json wiring ─────────────────────────────────────────────────
+
+def test_winget_upgrade_is_blocked(config_dir: Path) -> None:
+    rc, _, err = _check("winget upgrade python", "claude-hook", config_dir)
+    assert rc == 2
+    assert "ランタイム" in err or "winget" in err
+
+
+def test_pipx_upgrade_is_blocked(config_dir: Path) -> None:
+    rc, _, err = _check("pipx upgrade black", "claude-hook", config_dir)
+    assert rc == 2
+
+
+def test_npm_update_g_is_blocked(config_dir: Path) -> None:
+    rc, _, err = _check("npm update -g typescript", "claude-hook", config_dir)
+    assert rc == 2
+
 
 def test_runtime_policy_json_command_is_blocked(config_dir: Path) -> None:
     """Editing runtime_policy.json's runtime_install_commands must actually change hook behavior."""

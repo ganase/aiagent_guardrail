@@ -27,12 +27,15 @@
     "\\bbitsadmin\\b.*\\/transfer\\b"
   ],
   "runtime_install_patterns": [
-    "winget\\s+install\\s+",
-    "choco\\s+install\\s+",
-    "scoop\\s+install\\s+",
+    "winget\\s+(install|upgrade|update)\\s+",
+    "choco\\s+(install|upgrade|update)\\s+",
+    "scoop\\s+(install|update)\\s+",
     "msiexec\\s+",
     "npm\\s+install\\s+-g\\s+",
-    "pipx\\s+install\\s+"
+    "npm\\s+install\\s+.*\\s+-g\\b",
+    "npm\\s+update\\s+-g\\b",
+    "npm\\s+update\\s+.*\\s+-g\\b",
+    "pipx\\s+(install|upgrade|upgrade-all)\\b"
   ],
   "package_install_patterns": {
     "python": [
