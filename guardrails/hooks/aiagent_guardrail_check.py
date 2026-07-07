@@ -508,28 +508,23 @@ def evaluate_packages(
     mode: str,
 ) -> int:
     if not pkgs:
-        reason = "パッケージ名を解析できませんでした。AIガバナンスチームまたは管理者に相談してください。"
-        log_decision(logs_dir, user, ecosystem, "<unknown>", "ask", command)
-        return action_ask(reason, mode)
+        log_decision(logs_dir, user, ecosystem, "<unknown>", "allow(unparseable)", command)
+        return action_allow("パッケージ名を解析できませんでしたが、denyリストに該当しないため許可しました。", mode)
 
     deny_reasons: list[str] = []
-    ask_reasons: list[str] = []
 
     for pkg_name in pkgs:
         if pkg_name.startswith("__LOCAL_OR_VCS__"):
             actual = pkg_name[len("__LOCAL_OR_VCS__"):]
-            ask_reasons.append(f"ローカルパス・VCS・wheel指定は人間の確認が必要です: {actual}")
-            log_decision(logs_dir, user, ecosystem, actual, "ask", command)
+            log_decision(logs_dir, user, ecosystem, actual, "allow(local/vcs)", command)
             continue
         if pkg_name.startswith("__REQFILE_NOT_FOUND__"):
             actual = pkg_name[len("__REQFILE_NOT_FOUND__"):]
-            ask_reasons.append(f"requirements ファイルが見つかりません: {actual}")
-            log_decision(logs_dir, user, ecosystem, f"<reqfile:{actual}>", "ask", command)
+            log_decision(logs_dir, user, ecosystem, f"<reqfile:{actual}>", "allow(reqfile-not-found)", command)
             continue
         if pkg_name.startswith("__REQFILE_ERROR__"):
             actual = pkg_name[len("__REQFILE_ERROR__"):]
-            ask_reasons.append(f"requirements ファイルが読み取れません: {actual}")
-            log_decision(logs_dir, user, ecosystem, f"<reqfile:{actual}>", "ask", command)
+            log_decision(logs_dir, user, ecosystem, f"<reqfile:{actual}>", "allow(reqfile-error)", command)
             continue
 
         pkg_entry = lookup_package(allowlist, ecosystem, pkg_name)
@@ -538,16 +533,13 @@ def evaluate_packages(
             similar = check_typosquat(pkg_name, allowlist, ecosystem)
             if similar:
                 deny_reasons.append(
-                    f"タイポスクワッティングの可能性: '{pkg_name}' は許可済み '{similar}' に類似しています。\n"
+                    f"タイポスクワッティングの可能性: '{pkg_name}' は既知パッケージ '{similar}' に類似しています。\n"
                     f"正しいパッケージ名の場合はAIガバナンスチームまたは管理者に申請してください。"
                 )
                 log_decision(logs_dir, user, ecosystem, pkg_name, "deny(typosquat)", command)
             else:
-                ask_reasons.append(
-                    f"未審査パッケージ: {pkg_name}\n"
-                    f"導入が必要な場合はAIガバナンスチームまたは管理者に申請してください。"
-                )
-                log_decision(logs_dir, user, ecosystem, pkg_name, "ask", command)
+                # deny-list-only policy: unknown packages are allowed
+                log_decision(logs_dir, user, ecosystem, pkg_name, "allow(unknown)", command)
         else:
             status = pkg_entry.get("status", "")
             if status == "deny":
@@ -556,31 +548,16 @@ def evaluate_packages(
                     + f"\necosystem={ecosystem}\npackage={pkg_name}\nreason={pkg_entry.get('reason')}"
                 )
                 log_decision(logs_dir, user, ecosystem, pkg_name, "deny", command)
-            elif status == "review":
-                ask_reasons.append(
-                    policy["messages"]["package_review"]
-                    + f"\necosystem={ecosystem}\npackage={pkg_name}\nreason={pkg_entry.get('reason')}"
-                )
-                log_decision(logs_dir, user, ecosystem, pkg_name, "ask(review)", command)
-            else:  # allow
-                if is_expired(pkg_entry.get("expires_at")):
-                    ask_reasons.append(
-                        f"許可済みパッケージの確認期限が切れています: {pkg_name} "
-                        f"(expires_at={pkg_entry.get('expires_at')})\n"
-                        f"AIガバナンスチームまたは管理者に再審査を依頼してください。"
-                    )
-                    log_decision(logs_dir, user, ecosystem, pkg_name, "ask(expired)", command)
-                else:
-                    log_decision(logs_dir, user, ecosystem, pkg_name, "allow", command)
+            else:
+                # allow or review → allow (deny-list-only policy)
+                log_decision(logs_dir, user, ecosystem, pkg_name, "allow", command)
 
     if deny_reasons:
         return action_deny("\n---\n".join(deny_reasons), mode)
-    if ask_reasons:
-        return action_ask("\n---\n".join(ask_reasons), mode)
 
     allowed_names = [p for p in pkgs if not p.startswith("__")]
     return action_allow(
-        f"審査済みパッケージの導入を自動許可しました: {', '.join(allowed_names)}",
+        f"パッケージの導入を許可しました: {', '.join(allowed_names) if allowed_names else '(依存関係)'}",
         mode,
     )
 
@@ -699,8 +676,8 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
         if is_no_args and ecosystem == "javascript":
             js_pkgs = read_package_json_deps()
             if js_pkgs is None:
-                log_decision(logs_dir, user, ecosystem, "<package.json>", "ask", command)
-                return action_ask("package.json が読み取れないため人間の承認が必要です。", mode)
+                log_decision(logs_dir, user, ecosystem, "<package.json>", "allow(unreadable)", command)
+                return action_allow("package.json が読み取れませんでしたが、denyリストに該当しないため許可しました。", mode)
             if not js_pkgs:
                 return action_allow("package.json に依存パッケージがありません", mode)
             pkgs = js_pkgs

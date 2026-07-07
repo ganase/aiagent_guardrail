@@ -3,8 +3,8 @@
   "allowlist_version": "0.1.0",
   "updated_at": "2026-07-06",
   "owner": "AI Governance Team",
-  "description": "AI Agent標準環境で利用可能なPython/npmパッケージの許可済みリスト。初期サンプルであり、正式運用前に社内レビューが必要。",
-  "default_policy": "deny",
+  "description": "deny-list-only ポリシー用のパッケージリスト。status=deny のエントリがブロック対象。allow/review エントリは typosquat 検出の参照名として機能し、インストール審査の対象ではない。初期サンプルであり、正式運用前に社内レビューが必要。",
+  "default_policy": "deny_list_only",
   "ecosystems": {
     "python": {
       "package_manager": "pip",

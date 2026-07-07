@@ -68,7 +68,6 @@ POLICY = {
     "messages": {
         "runtime_install": "ランタイム導入は管理者に相談してください。",
         "package_not_allowed": "このパッケージは禁止されています。",
-        "package_review": "このパッケージはreview扱いです。",
         "dangerous_command": "危険なコマンドのためブロックしました。",
     },
 }
@@ -149,10 +148,10 @@ def test_allow_pandas(config_dir: Path) -> None:
     assert _decision(out) == "allow"
 
 
-def test_ask_unknown_package(config_dir: Path) -> None:
+def test_allow_unknown_package(config_dir: Path) -> None:
     rc, out, _ = _check("pip install unknown-pkg-xyz", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
 def test_deny_malicious_package(config_dir: Path) -> None:
@@ -175,39 +174,39 @@ def test_deny_typosquat_of_review_package(config_dir: Path) -> None:
     assert "reqeusts" in err and "requests" in err
 
 
-def test_ask_review_package(config_dir: Path) -> None:
+def test_allow_review_package(config_dir: Path) -> None:
     rc, out, _ = _check("pip install requests", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
 # ── D. Pattern coverage ────────────────────────────────────────────────────────
 
-def test_pip3_unknown_is_ask(config_dir: Path) -> None:
+def test_pip3_unknown_is_allow(config_dir: Path) -> None:
     rc, out, _ = _check("pip3 install unknown-pkg", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
-def test_uv_add_unknown_is_ask(config_dir: Path) -> None:
+def test_uv_add_unknown_is_allow(config_dir: Path) -> None:
     rc, out, _ = _check("uv add unknown-pkg", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
-def test_uv_pip_install_unknown_is_ask(config_dir: Path) -> None:
+def test_uv_pip_install_unknown_is_allow(config_dir: Path) -> None:
     rc, out, _ = _check("uv pip install unknown-pkg", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
-def test_npm_install_no_args_ask(config_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_npm_install_no_args_allow(config_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pj = tmp_path / "package.json"
     pj.write_text(json.dumps({"dependencies": {"unknown-js-pkg-xyz": "^1.0.0"}}), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     rc, out, _ = _check("npm install", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
 def test_pip_install_r_all_allow(config_dir: Path, tmp_path: Path) -> None:
@@ -218,12 +217,12 @@ def test_pip_install_r_all_allow(config_dir: Path, tmp_path: Path) -> None:
     assert _decision(out) == "allow"
 
 
-def test_pip_install_r_with_unknown_is_ask(config_dir: Path, tmp_path: Path) -> None:
+def test_pip_install_r_with_unknown_is_allow(config_dir: Path, tmp_path: Path) -> None:
     req = tmp_path / "requirements.txt"
     req.write_text("pandas\nunknown-lib-xyz\n", encoding="utf-8")
     rc, out, _ = _check(f'pip install -r "{req}"', "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
 def test_pip_install_custom_index_deny(config_dir: Path) -> None:
@@ -286,7 +285,7 @@ def test_cat_env_example_is_allowed(config_dir: Path) -> None:
 
 # ── expires_at enforcement ──────────────────────────────────────────────────────
 
-def test_expired_allow_package_becomes_ask(config_dir: Path) -> None:
+def test_expired_allow_package_stays_allow(config_dir: Path) -> None:
     allowlist = json.loads((config_dir / "package_allowlist.json").read_text(encoding="utf-8"))
     allowlist["ecosystems"]["python"]["packages"].append(
         {"name": "oldlib", "status": "allow", "reason": "期限切れテスト用", "expires_at": "2000-01-01"}
@@ -295,7 +294,7 @@ def test_expired_allow_package_becomes_ask(config_dir: Path) -> None:
 
     rc, out, _ = _check("pip install oldlib", "claude-hook", config_dir)
     assert rc == 0
-    assert _decision(out) == "ask"
+    assert _decision(out) == "allow"
 
 
 def test_unexpired_allow_package_stays_allow(config_dir: Path) -> None:

@@ -2,7 +2,7 @@
   "schema_version": "1.1.0",
   "policy_version": "0.2.1",
   "owner": "AI Governance Team",
-  "default_action": "fail_closed",
+  "default_action": "deny_list_only",
   "dangerous_command_patterns": [
     "rm\\s+-rf\\s+[/~]",
     "\\bdel\\b.*\\/s\\b",
@@ -64,7 +64,6 @@
   "messages": {
     "runtime_install": "プログラムランタイムやグローバルツールの導入は会社のソフトウェア導入許可リスト・指定手順に従ってください。AI Agentの提案だけで導入せず、AIガバナンスチームまたは管理者に相談してください。",
     "package_not_allowed": "このパッケージは明示的に禁止されています。個人判断で導入せず、AIガバナンスチームまたは管理者に相談してください。",
-    "package_review": "このライブラリはreview扱いです。用途・バージョン・接続先を明記してAIガバナンスチームまたは管理者に承認を受けてください。",
     "dangerous_command": "危険なコマンドの可能性があるため停止しました。必要な場合はAIガバナンスチームまたは管理者に相談してください。"
   }
 }

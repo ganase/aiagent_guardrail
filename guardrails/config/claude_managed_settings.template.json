@@ -34,7 +34,6 @@
   },
   "allowedMcpServers": [],
   "allowManagedMcpServersOnly": true,
-  "allowManagedHooksOnly": true,
   "allowManagedPermissionRulesOnly": true,
   "allowedHttpHookUrls": []
 }
