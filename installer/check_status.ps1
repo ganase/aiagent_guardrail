@@ -99,6 +99,96 @@ if (Test-Path $codex) { Write-Host "OK   Codex config: $codex" }
 else { Write-Host "INFO Codex config not found: $codex" }
 
 Write-Host ""
+Write-Host "--- Hook call rate counter (直近60分) ---"
+$hookRateFile = Join-Path $env:TEMP "aiagent_guardrail\hook_rate_$env:USERNAME.json"
+if (Test-Path $hookRateFile) {
+    try {
+        $rawTs = Get-Content $hookRateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $windowSecs = 3600
+        $recentCount = 0
+        foreach ($ts in $rawTs) {
+            if (($nowEpoch - $ts) -lt $windowSecs) { $recentCount++ }
+        }
+        $rateColor = if ($recentCount -ge 100) { "Red" } elseif ($recentCount -ge 50) { "Yellow" } else { "Green" }
+        Write-Host "Hook呼び出し回数（直近60分）: $recentCount 回" -ForegroundColor $rateColor
+        if ($recentCount -ge 100) {
+            Write-Host "WARN ブロック閾値（100回）超過中。AIループの可能性を確認してください。" -ForegroundColor Red
+            $allOk = $false
+        } elseif ($recentCount -ge 50) {
+            Write-Host "WARN 警告閾値（50回）超過中。長時間の自律実行が継続しています。" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "INFO Hook rate file の読み取りに失敗しました: $_"
+    }
+} else {
+    Write-Host "INFO rate file なし（直近60分のHook呼び出しなし、または初回）"
+}
+
+Write-Host ""
+Write-Host "--- Claude Code session cost report (直近7日) ---"
+$claudeProjects = Join-Path $env:USERPROFILE ".claude\projects"
+if (Test-Path $claudeProjects) {
+    $cutoff = (Get-Date).AddDays(-7)
+    $sessionResults = @()
+
+    Get-ChildItem $claudeProjects -Recurse -Filter "*.jsonl" -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -gt $cutoff } |
+    ForEach-Object {
+        $file = $_
+        $inputTok = 0; $outputTok = 0; $cacheReadTok = 0
+
+        Get-Content $file.FullName -Encoding UTF8 -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $obj = $_ | ConvertFrom-Json
+                $u = $null
+                if ($obj.message) { $u = $obj.message.usage }
+                if ($u) {
+                    if ($u.input_tokens)            { $inputTok    += [int]$u.input_tokens }
+                    if ($u.output_tokens)           { $outputTok   += [int]$u.output_tokens }
+                    if ($u.cache_read_input_tokens) { $cacheReadTok += [int]$u.cache_read_input_tokens }
+                }
+            } catch {}
+        }
+
+        if ($inputTok -gt 0 -or $outputTok -gt 0) {
+            $baseName = $file.BaseName
+            $shortId = if ($baseName.Length -ge 8) { $baseName.Substring(0, 8) } else { $baseName }
+            $sessionResults += [PSCustomObject]@{
+                Session  = $shortId
+                Modified = $file.LastWriteTime.ToString("MM/dd HH:mm")
+                InputK   = [math]::Round($inputTok   / 1000, 1)
+                OutputK  = [math]::Round($outputTok  / 1000, 1)
+                CacheK   = [math]::Round($cacheReadTok / 1000, 1)
+                TotalK   = [math]::Round(($inputTok + $outputTok) / 1000, 1)
+            }
+        }
+    }
+
+    if ($sessionResults.Count -gt 0) {
+        $sessionResults | Sort-Object TotalK -Descending | Select-Object -First 10 |
+            Format-Table -AutoSize `
+                @{L="Session(8c)"; E={$_.Session}},
+                @{L="Date";        E={$_.Modified}},
+                @{L="Input(K)";    E={$_.InputK}},
+                @{L="Output(K)";   E={$_.OutputK}},
+                @{L="Cache(K)";    E={$_.CacheK}},
+                @{L="Total(K)";    E={$_.TotalK}}
+
+        $highUsage = $sessionResults | Where-Object { $_.TotalK -gt 500 }
+        if ($highUsage) {
+            Write-Host "WARN 高トークン使用セッションあり（>50万tok）。コスト異常の可能性があります。" -ForegroundColor Yellow
+        } else {
+            Write-Host "直近7日のセッション: 異常なし（最大 $(($sessionResults | Sort-Object TotalK -Descending | Select-Object -First 1).TotalK)K tok）" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "INFO セッションデータなし（直近7日・tokenデータ未検出）"
+    }
+} else {
+    Write-Host "INFO .claude\projects が見つかりません（Claude Code 未導入、または別パス）"
+}
+
+Write-Host ""
 Write-Host "--- Hash integrity check (installed_hashes.csv) ---"
 $hashFile = Join-Path $InstallRoot "config\installed_hashes.csv"
 if (Test-Path $hashFile) {

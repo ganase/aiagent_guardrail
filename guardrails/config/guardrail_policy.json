@@ -55,6 +55,11 @@
       "pnpm\\s+(add|install)\\b"
     ]
   },
+  "hook_call_limits": {
+    "warn": 50,
+    "block": 100,
+    "window_minutes": 60
+  },
   "blocked_paths": [
     ".env",
     ".env.*",

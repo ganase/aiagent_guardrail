@@ -5,7 +5,8 @@ Design:
   - Fail-closed: any exception in claude-hook mode returns exit 2.
   - Trust anchor: in claude-hook mode, config path is derived from __file__ only,
     never from AIAGENT_GUARDRAIL_HOME (user-writable).
-  - 3-layer policy: deny (exit 2) / allow (exit 0 + JSON) / ask (exit 0 + JSON).
+  - deny-list-only policy: deny (exit 2) / allow (exit 0 + JSON).
+  - Hook call rate limiter: rolling-window counter in %TEMP% for R9/R14 detection.
 """
 from __future__ import annotations
 
@@ -20,6 +21,8 @@ import os
 import re
 import shlex
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -177,6 +180,63 @@ def action_ask(message: str, mode: str) -> int:
         return 0
     print("導入を中止しました。AIガバナンスチームまたは管理者に相談してください。", file=sys.stderr)
     return 1
+
+
+# ── Hook call rate limiter (R9: コスト膨張 / R14: 無限ループ検知) ─────────────────
+
+def check_hook_call_rate(
+    policy: dict[str, Any],
+    user: str,
+    *,
+    _base_dir: Path | None = None,
+) -> str | None:
+    """
+    Tracks hook invocation frequency using a rolling time window stored in %TEMP%.
+    Returns a block message string if the hard threshold is exceeded.
+    Returns None and emits a stderr warning if the soft threshold is exceeded.
+    Returns None silently if within limits or on any I/O error (fail-open).
+
+    _base_dir: override temp base directory (for testing only).
+    """
+    limits = policy.get("hook_call_limits", {})
+    if not limits:
+        return None
+
+    warn_threshold = int(limits.get("warn", 50))
+    block_threshold = int(limits.get("block", 100))
+    window_minutes = int(limits.get("window_minutes", 60))
+    window_secs = window_minutes * 60
+
+    try:
+        base = _base_dir if _base_dir is not None else Path(tempfile.gettempdir())
+        rate_dir = base / "aiagent_guardrail"
+        rate_dir.mkdir(parents=True, exist_ok=True)
+        rate_file = rate_dir / f"hook_rate_{user}.json"
+
+        now = time.time()
+        timestamps: list[float] = (
+            json.loads(rate_file.read_text(encoding="utf-8")) if rate_file.exists() else []
+        )
+        timestamps = [t for t in timestamps if now - t < window_secs]
+        timestamps.append(now)
+        rate_file.write_text(json.dumps(timestamps), encoding="utf-8")
+        count = len(timestamps)
+    except Exception:
+        return None  # fail-open: never block due to counter I/O errors
+
+    if count >= block_threshold:
+        return (
+            f"[コスト制御] 直近{window_minutes}分のHook呼び出しが{count}回に達しました"
+            f"（ブロック閾値: {block_threshold}回）。\n"
+            f"AIの自律的なループ実行が疑われます。セッションを一度終了し、状況を確認してください。"
+        )
+    if count >= warn_threshold:
+        print(
+            f"[コスト警告] 直近{window_minutes}分のHook呼び出し: {count}回"
+            f"（警告閾値: {warn_threshold}回）。長時間の自律実行が継続しています。",
+            file=sys.stderr,
+        )
+    return None
 
 
 # ── Logging (best-effort: never let failures affect policy decisions) ──────────
@@ -608,6 +668,11 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
     err = verify_hashes(config_dir)
     if err:
         return action_deny(f"[改ざん検知] {err}", mode)
+
+    # R9/R14: Hook call rate limiter
+    rate_block = check_hook_call_rate(policy, user)
+    if rate_block:
+        return action_deny(rate_block, mode)
 
     # 1. Dangerous command patterns (JSON-defined)
     for pat in policy.get("dangerous_command_patterns", []):

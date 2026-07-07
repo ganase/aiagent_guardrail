@@ -444,6 +444,50 @@ def test_no_hash_file_proceeds(config_dir: Path) -> None:
     assert _decision(out) == "allow"
 
 
+# ── Hook call rate limiter ─────────────────────────────────────────────────────
+
+def _rate_policy(warn: int, block: int, window: int = 60) -> dict:
+    return {"hook_call_limits": {"warn": warn, "block": block, "window_minutes": window}}
+
+
+def test_hook_rate_below_warn_returns_none(tmp_path: Path) -> None:
+    p = _rate_policy(warn=5, block=10)
+    for _ in range(4):
+        result = gc.check_hook_call_rate(p, "testuser", _base_dir=tmp_path)
+    assert result is None
+
+
+def test_hook_rate_warn_emits_stderr_returns_none(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    p = _rate_policy(warn=3, block=10)
+    result = None
+    for _ in range(3):
+        result = gc.check_hook_call_rate(p, "testuser", _base_dir=tmp_path)
+    assert result is None
+    assert "コスト警告" in capsys.readouterr().err
+
+
+def test_hook_rate_block_returns_message(tmp_path: Path) -> None:
+    p = _rate_policy(warn=2, block=4)
+    result = None
+    for _ in range(4):
+        result = gc.check_hook_call_rate(p, "testuser", _base_dir=tmp_path)
+    assert result is not None
+    assert "コスト制御" in result
+
+
+def test_hook_rate_no_limits_key_is_noop(tmp_path: Path) -> None:
+    result = gc.check_hook_call_rate({}, "testuser", _base_dir=tmp_path)
+    assert result is None
+
+
+def test_hook_rate_different_users_independent(tmp_path: Path) -> None:
+    p = _rate_policy(warn=2, block=3)
+    for _ in range(3):
+        gc.check_hook_call_rate(p, "alice", _base_dir=tmp_path)
+    result = gc.check_hook_call_rate(p, "bob", _base_dir=tmp_path)
+    assert result is None  # bob's counter is independent
+
+
 # ── Levenshtein utility ────────────────────────────────────────────────────────
 
 def test_levenshtein_same() -> None:
