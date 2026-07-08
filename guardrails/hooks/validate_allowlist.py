@@ -27,8 +27,8 @@ def validate(path: Path) -> list[str]:
     missing = REQUIRED_TOP - set(data)
     if missing:
         errors.append(f"トップレベル必須キー不足: {sorted(missing)}")
-    if data.get("default_policy") != "deny":
-        errors.append("default_policy は deny である必要があります")
+    if data.get("default_policy") not in {"deny", "deny_list_only"}:
+        errors.append('default_policy は "deny" または "deny_list_only" である必要があります')
     ecosystems = data.get("ecosystems")
     if not isinstance(ecosystems, dict):
         errors.append("ecosystems は object である必要があります")

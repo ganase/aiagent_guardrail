@@ -38,10 +38,50 @@ function Test-Command([string]$name) {
 $isAdmin       = Test-IsAdmin
 $hasNode       = Test-Command "node"
 $hasNpm        = Test-Command "npm"
-$hasPython     = Test-Command "python"
 $hasClaude     = Test-Command "claude"
 $hasCodex      = Test-Command "codex"
 $hasWinget     = Test-Command "winget"
+
+# Python detection: check PATH first (python / python3), then common
+# Miniforge / Mambaforge / Conda / Anaconda installation directories.
+function Find-PythonExe {
+    foreach ($name in @('python', 'python3')) {
+        $c = Get-Command $name -ErrorAction SilentlyContinue
+        if ($c) { return $c.Source }
+    }
+    $condaBases = @(
+        "$env:USERPROFILE\miniforge3",
+        "$env:USERPROFILE\mambaforge",
+        "$env:USERPROFILE\miniconda3",
+        "$env:USERPROFILE\Miniconda3",
+        "$env:USERPROFILE\anaconda3",
+        "$env:USERPROFILE\Anaconda3",
+        "$env:LOCALAPPDATA\miniforge3",
+        "$env:LOCALAPPDATA\mambaforge",
+        "$env:ProgramData\miniforge3",
+        "$env:ProgramData\mambaforge",
+        "C:\miniforge3",
+        "C:\mambaforge",
+        "C:\miniconda3",
+        "C:\anaconda3"
+    )
+    foreach ($base in $condaBases) {
+        $py = Join-Path $base 'python.exe'
+        if (Test-Path $py -ErrorAction SilentlyContinue) { return $py }
+    }
+    return $null
+}
+
+$pythonExePath = Find-PythonExe
+$hasPython     = $null -ne $pythonExePath
+# If Python found outside PATH (conda/miniforge), add its directory to the session
+# PATH so the background install job inherits it and can call python directly.
+if ($hasPython) {
+    $pyDir = Split-Path $pythonExePath -Parent
+    if ($env:Path -notlike "*$pyDir*") {
+        $env:Path = "$pyDir;$env:Path"
+    }
+}
 
 $nodeVer   = if ($hasNode)   { (node --version 2>$null) -replace '^v','' } else { $null }
 $claudeVer = if ($hasClaude) {
@@ -149,7 +189,14 @@ $adminText  = if ($isAdmin)   { "管理者権限あり" } else { "管理者権�
 
 $pyIcon  = if ($hasPython) { "[OK]" } else { "[!]" }
 $pyColor = if ($hasPython) { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::DarkOrange }
-$pyText  = if ($hasPython) { "Python 検出済み" } else { "Python 未検出" }
+$pyText  = if (-not $hasPython) {
+    "Python 未検出"
+} elseif (Test-Command 'python') {
+    "Python 検出済み"
+} else {
+    $condaName = Split-Path (Split-Path $pythonExePath -Parent) -Leaf
+    "Python 検出済み（$condaName）"
+}
 
 $pnlDetect.Controls.Add((New-StatusLabel "$adminIcon  $adminText" $adminColor 320 6))
 $pnlDetect.Controls.Add((New-StatusLabel "$pyIcon  $pyText"       $pyColor   320 26))

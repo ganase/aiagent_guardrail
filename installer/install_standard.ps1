@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$InstallRoot,
   [switch]$ConfigureClaude,
   [switch]$ConfigureCodex,
@@ -38,7 +38,7 @@ if ($IsAdmin) {
   Write-Warning "管理者権限がないためACL保護を設定できません。非 admin 導入は評価用途限定です。設定ファイルはユーザーが変更可能な状態です。"
 }
 
-[Environment]::SetEnvironmentVariable("AIAGENT_GUARDRAIL_HOME", $InstallRoot, "User")
+[Environment]::SetEnvironmentVariable('AIAGENT_GUARDRAIL_HOME', $InstallRoot, 'User')
 $env:AIAGENT_GUARDRAIL_HOME = $InstallRoot
 
 # Validate allowlist
@@ -88,9 +88,9 @@ if ($ConfigureCodex) {
 
 if ($AddWrappersToUserPath) {
   $bin = Join-Path $InstallRoot "bin"
-  $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
   if ($currentPath -notlike "*$bin*") {
-    [Environment]::SetEnvironmentVariable("Path", "$currentPath;$bin", "User")
+    [Environment]::SetEnvironmentVariable('Path', "$currentPath;$bin", 'User')
     Write-Host "User PATH に追加しました: $bin"
   }
 }

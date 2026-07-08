@@ -31,3 +31,9 @@ Thumbs.db
 # Claude Code local settings (machine-specific, must not be in a public template)
 .claude/settings.local.json
 .claude/settings.json
+
+# Local investigation/reference files (not part of the public template)
+Check/
+
+# Auto-generated test result artifacts
+tests/test_results/
