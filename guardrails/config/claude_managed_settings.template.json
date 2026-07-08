@@ -29,6 +29,53 @@
             "command": "\"%AIAGENT_GUARDRAIL_HOME%\\hooks\\run_guardrail_hook.cmd\""
           }
         ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"%AIAGENT_GUARDRAIL_HOME%\\hooks\\run_guardrail_hook.cmd\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"%AIAGENT_GUARDRAIL_HOME%\\hooks\\run_guardrail_hook.cmd\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"%AIAGENT_GUARDRAIL_HOME%\\hooks\\run_guardrail_hook.cmd\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"%AIAGENT_GUARDRAIL_HOME%\\hooks\\run_guardrail_hook.cmd\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"%AIAGENT_GUARDRAIL_HOME%\\hooks\\run_guardrail_hook.cmd\""
+          }
+        ]
       }
     ]
   },

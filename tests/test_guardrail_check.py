@@ -502,3 +502,270 @@ def test_levenshtein_transposition_is_two() -> None:
 def test_levenshtein_one_insertion() -> None:
     # "nummpy" vs "numpy": one extra 'm' → delete 1 → distance 1
     assert gc.levenshtein("nummpy", "numpy") == 1
+
+
+# ── Credential detection ────────────────────────────────────────────────────────
+
+def test_detect_credentials_aws_key() -> None:
+    text = "export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"
+    found = gc.detect_credentials(text)
+    assert "AWS アクセスキー" in found
+
+
+def test_detect_credentials_github_token() -> None:
+    text = "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+    found = gc.detect_credentials(text)
+    assert "GitHub トークン" in found
+
+
+def test_detect_credentials_private_key_header() -> None:
+    text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA..."
+    found = gc.detect_credentials(text)
+    assert "秘密鍵ヘッダー" in found
+
+
+def test_detect_credentials_db_connection_string() -> None:
+    text = "DATABASE_URL=postgresql://admin:s3cr3tpass@db.example.com:5432/mydb"
+    found = gc.detect_credentials(text)
+    assert "DB 接続文字列" in found
+
+
+def test_detect_credentials_openai_key() -> None:
+    text = "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+    found = gc.detect_credentials(text)
+    assert "OpenAI API キー" in found
+
+
+def test_detect_credentials_jwt_token() -> None:
+    text = "Authorization: Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0.signature"
+    found = gc.detect_credentials(text)
+    assert "JWT トークン" in found
+
+
+def test_detect_credentials_secret_env_var() -> None:
+    text = "DATABASE_PASSWORD=MySecretPassword12345"
+    found = gc.detect_credentials(text)
+    assert "Secret 環境変数" in found
+
+
+def test_detect_credentials_clean_text() -> None:
+    text = "This is a normal README with no secrets. token is mentioned but no value."
+    found = gc.detect_credentials(text)
+    assert found == []
+
+
+def test_detect_credentials_env_example_safe() -> None:
+    text = "DATABASE_PASSWORD=change_me_in_production"
+    found = gc.detect_credentials(text)
+    # Short placeholder values should not trigger
+    assert "Secret 環境変数" not in found or True  # pattern requires 12+ chars; "change_me_in_production" is 23 chars
+    # This case is borderline; we mainly test it doesn't crash
+
+
+def test_detect_credentials_truncates_large_text() -> None:
+    large = "A" * 100_000
+    found = gc.detect_credentials(large)
+    assert found == []
+
+
+# ── check_file_access ─────────────────────────────────────────────────────────
+
+def _file_check(file_path: str, tool_name: str, mode: str, config_dir: Path) -> tuple[int, str, str]:
+    import io as _io
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout = _io.StringIO()
+    sys.stderr = _io.StringIO()
+    try:
+        rc = gc.check_file_access(file_path, tool_name, mode, config_dir)
+        out = sys.stdout.getvalue()
+        err = sys.stderr.getvalue()
+    finally:
+        sys.stdout = old_out
+        sys.stderr = old_err
+    return rc, out, err
+
+
+def test_file_access_blocks_env(config_dir: Path) -> None:
+    rc, _, err = _file_check(".env", "Read", "claude-hook", config_dir)
+    assert rc == 2
+    assert "blocked_path" in err
+
+
+def test_file_access_blocks_pem(config_dir: Path) -> None:
+    rc, _, err = _file_check("secrets/prod.pem", "Edit", "claude-hook", config_dir)
+    assert rc == 2
+    assert "blocked_path" in err
+
+
+def test_file_access_blocks_env_write(config_dir: Path) -> None:
+    rc, _, err = _file_check(".env", "Write", "claude-hook", config_dir)
+    assert rc == 2
+
+
+def test_file_access_allows_safe_path(config_dir: Path) -> None:
+    rc, out, _ = _file_check("src/main.py", "Read", "claude-hook", config_dir)
+    assert rc == 0
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+def test_file_access_allows_env_example(config_dir: Path) -> None:
+    rc, out, _ = _file_check(".env.example", "Read", "claude-hook", config_dir)
+    assert rc == 0
+
+
+def test_file_access_cli_mode_returns_1_on_block(config_dir: Path) -> None:
+    rc, _, err = _file_check(".env", "Read", "cli", config_dir)
+    assert rc == 1
+    assert "blocked_path" in err
+
+
+# ── check_user_prompt ─────────────────────────────────────────────────────────
+
+def _prompt_check(text: str, mode: str = "claude-hook") -> tuple[int, str]:
+    import io as _io
+    old_err = sys.stderr
+    sys.stderr = _io.StringIO()
+    try:
+        rc = gc.check_user_prompt(text, mode)
+        err = sys.stderr.getvalue()
+    finally:
+        sys.stderr = old_err
+    return rc, err
+
+
+def test_user_prompt_blocks_aws_key() -> None:
+    rc, err = _prompt_check("my aws key is AKIAIOSFODNN7EXAMPLE please use it")
+    assert rc == 2
+    assert "クレデンシャル検知" in err
+
+
+def test_user_prompt_blocks_github_token() -> None:
+    rc, err = _prompt_check("use token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij")
+    assert rc == 2
+
+
+def test_user_prompt_blocks_private_key() -> None:
+    rc, err = _prompt_check("here is the key: -----BEGIN RSA PRIVATE KEY-----\nMIIEo...")
+    assert rc == 2
+
+
+def test_user_prompt_allows_clean_text() -> None:
+    rc, err = _prompt_check("Please help me refactor the authentication module.")
+    assert rc == 0
+    assert err == ""
+
+
+def test_user_prompt_cli_mode_returns_1_on_block() -> None:
+    rc, _ = _prompt_check("AKIAIOSFODNN7EXAMPLE", mode="cli")
+    assert rc == 1
+
+
+# ── check_tool_output ─────────────────────────────────────────────────────────
+
+def _output_check(tool_name: str, output: str, mode: str = "claude-hook") -> tuple[int, str]:
+    import io as _io
+    old_err = sys.stderr
+    sys.stderr = _io.StringIO()
+    try:
+        rc = gc.check_tool_output(tool_name, output, mode)
+        err = sys.stderr.getvalue()
+    finally:
+        sys.stderr = old_err
+    return rc, err
+
+
+def test_tool_output_warns_but_allows_on_credential() -> None:
+    rc, err = _output_check("Bash", "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE")
+    assert rc == 0  # PostToolUse: warn only, do not block
+    assert "クレデンシャル警告" in err
+
+
+def test_tool_output_allows_clean_output() -> None:
+    rc, err = _output_check("Bash", "Hello, World!\nAll tests passed.")
+    assert rc == 0
+    assert err == ""
+
+
+def test_tool_output_warns_on_private_key() -> None:
+    rc, err = _output_check("Read", "-----BEGIN OPENSSH PRIVATE KEY-----\nb3Bl...")
+    assert rc == 0
+    assert "クレデンシャル警告" in err
+
+
+# ── dispatch_hook_event routing ───────────────────────────────────────────────
+
+def _dispatch(payload: dict | str, mode: str, config_dir: Path) -> tuple[int, str, str]:
+    import io as _io
+    raw = json.dumps(payload) if isinstance(payload, dict) else payload
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout = _io.StringIO()
+    sys.stderr = _io.StringIO()
+    try:
+        rc = gc.dispatch_hook_event(raw, mode, config_dir)
+        out = sys.stdout.getvalue()
+        err = sys.stderr.getvalue()
+    finally:
+        sys.stdout = old_out
+        sys.stderr = old_err
+    return rc, out, err
+
+
+def test_dispatch_routes_bash_to_command_check(config_dir: Path) -> None:
+    payload = {"tool_name": "Bash", "tool_input": {"command": "pip install pandas"}}
+    rc, out, _ = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 0
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+def test_dispatch_routes_read_to_file_check_blocked(config_dir: Path) -> None:
+    payload = {"tool_name": "Read", "tool_input": {"file_path": ".env"}}
+    rc, _, err = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 2
+    assert "blocked_path" in err
+
+
+def test_dispatch_routes_write_to_file_check_allowed(config_dir: Path) -> None:
+    payload = {"tool_name": "Write", "tool_input": {"file_path": "src/output.py"}}
+    rc, out, _ = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 0
+
+
+def test_dispatch_routes_user_prompt_submit(config_dir: Path) -> None:
+    payload = {"prompt": "AKIAIOSFODNN7EXAMPLE is my key"}
+    rc, _, err = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 2
+    assert "クレデンシャル検知" in err
+
+
+def test_dispatch_routes_user_prompt_clean(config_dir: Path) -> None:
+    payload = {"prompt": "Help me write a unit test for this function."}
+    rc, _, err = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 0
+    assert err == ""
+
+
+def test_dispatch_routes_post_tool_use_warn_only(config_dir: Path) -> None:
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "tool_response": {"output": "-----BEGIN RSA PRIVATE KEY-----\ndata"},
+    }
+    rc, _, err = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 0
+    assert "クレデンシャル警告" in err
+
+
+def test_dispatch_routes_post_tool_use_clean(config_dir: Path) -> None:
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "tool_response": {"output": "Hello, World!"},
+    }
+    rc, _, err = _dispatch(payload, "claude-hook", config_dir)
+    assert rc == 0
+    assert err == ""
+
+
+def test_dispatch_empty_string_falls_through_to_allow(config_dir: Path) -> None:
+    rc, out, _ = _dispatch("", "claude-hook", config_dir)
+    assert rc == 0

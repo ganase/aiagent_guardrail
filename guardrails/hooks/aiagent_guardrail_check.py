@@ -7,6 +7,8 @@ Design:
     never from AIAGENT_GUARDRAIL_HOME (user-writable).
   - deny-list-only policy: deny (exit 2) / allow (exit 0 + JSON).
   - Hook call rate limiter: rolling-window counter in %TEMP% for R9/R14 detection.
+  - Multi-event routing: PreToolUse(Bash/Read/Edit/Write), UserPromptSubmit, PostToolUse.
+  - Credential detection: blocks prompts containing known token/key patterns.
 """
 from __future__ import annotations
 
@@ -33,6 +35,10 @@ if hasattr(sys.stdout, "reconfigure"):
 else:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", line_buffering=True)
+# Reconfigure stdin to utf-8-sig so PowerShell BOM (EF BB BF) is stripped before json.loads.
+# Guarded because pytest replaces sys.stdin with DontReadFromInput (no reconfigure method).
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8-sig")
 
 # Trust anchor: always derived from this file's location
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -237,6 +243,149 @@ def check_hook_call_rate(
             file=sys.stderr,
         )
     return None
+
+
+# ── Credential detection (UserPromptSubmit / PostToolUse / PreToolUse file) ────
+# Patterns are intentionally specific to minimise false positives.
+# Generic words like "password" alone are NOT matched — a known-format value is required.
+
+_CREDENTIAL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("AWS アクセスキー",       re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("GitHub トークン",        re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36}\b")),
+    ("GitHub PAT",            re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82}\b")),
+    ("JWT トークン",           re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+")),
+    ("OpenAI API キー",        re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b")),
+    ("Anthropic API キー",     re.compile(r"\bsk-ant-[A-Za-z0-9_-]{40,}\b")),
+    ("DB 接続文字列",          re.compile(r"(?i)(?:mongodb|postgresql|postgres|mysql|redis|amqp)://[^:\s/]+:[^@\s]+@\S+")),
+    ("秘密鍵ヘッダー",         re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")),
+    ("API キー代入",           re.compile(r"(?i)(?:api[_-]?key|api[_-]?secret|auth[_-]?token|access[_-]?token|secret[_-]?key)\s*[:=]\s*[\"']?[A-Za-z0-9+/\-_]{20,}[\"']?")),
+    ("Secret 環境変数",        re.compile(r"\b[A-Z][A-Z0-9_]{3,}(?:_KEY|_SECRET|_TOKEN|_PASSWORD|_PASS|_CREDENTIAL)\s*=\s*[A-Za-z0-9+/\-_\.]{12,}")),
+]
+
+
+def detect_credentials(text: str) -> list[str]:
+    """Return list of matched credential type names. Scans up to 50 KB to bound cost."""
+    sample = text[:50_000]
+    return [name for name, pat in _CREDENTIAL_PATTERNS if pat.search(sample)]
+
+
+# ── PreToolUse handler for Read / Edit / Write / MultiEdit ────────────────────
+
+def check_file_access(
+    file_path: str,
+    tool_name: str,
+    mode: str = "cli",
+    config_dir: Path | None = None,
+) -> int:
+    """Block Read/Edit/Write tool access to credential files via _is_blocked_path."""
+    resolved = config_dir if config_dir is not None else _get_config_dir(mode)
+    try:
+        err = verify_hashes(resolved)
+        if err:
+            return action_deny(f"[改ざん検知] {err}", mode)
+        if _is_blocked_path(file_path):
+            return action_deny(
+                f"[blocked_path] 機密ファイルへの {tool_name} アクセスをブロックしました。\n"
+                f"file_path={file_path}\n"
+                f"対象: .env / secrets / 秘密鍵ファイル等",
+                mode,
+            )
+        return action_allow(f"{tool_name} アクセスを許可しました: {file_path}", mode)
+    except Exception as e:
+        print(
+            f"ガードレール内部エラーのため安全側で停止しました: {type(e).__name__}: {e}",
+            file=sys.stderr,
+        )
+        return 2 if mode == "claude-hook" else 1
+
+
+# ── UserPromptSubmit handler ───────────────────────────────────────────────────
+
+def check_user_prompt(prompt_text: str, mode: str = "cli") -> int:
+    """Block UserPromptSubmit events that contain recognisable credential patterns."""
+    found = detect_credentials(prompt_text)
+    if found:
+        types = "、".join(found)
+        print(
+            f"[クレデンシャル検知] プロンプトに機密情報が含まれている可能性があります: {types}\n"
+            f"APIキー・パスワード・接続文字列をプロンプトに直接入力しないでください。\n"
+            f"ファイルパスを共有する形式に変更するか、AIガバナンスチームまたは管理者に相談してください。",
+            file=sys.stderr,
+        )
+        return 2 if mode == "claude-hook" else 1
+    return 0
+
+
+# ── PostToolUse handler ────────────────────────────────────────────────────────
+
+def check_tool_output(tool_name: str, output_text: str, mode: str = "cli") -> int:
+    """Warn on PostToolUse events containing credential patterns. Does not block (action already done)."""
+    found = detect_credentials(output_text)
+    if found:
+        types = "、".join(found)
+        print(
+            f"[クレデンシャル警告] ツール出力に機密情報が含まれている可能性があります: {types}\n"
+            f"tool={tool_name}\n"
+            f"このセッションで機密情報が表示されています。外部送信・スクリーンショット・ログ保存に注意してください。",
+            file=sys.stderr,
+        )
+    return 0
+
+
+# ── Hook event router (stdin dispatcher) ──────────────────────────────────────
+
+_FILE_TOOLS = frozenset({"Read", "Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+
+def dispatch_hook_event(raw: str, mode: str, config_dir: Path | None = None) -> int:
+    """
+    Parse the hook JSON payload from stdin and route to the appropriate handler.
+
+    Routing rules:
+      - No "tool_name" + has "prompt"    → UserPromptSubmit → check_user_prompt
+      - Has "tool_response"              → PostToolUse      → check_tool_output
+      - tool_name in _FILE_TOOLS         → PreToolUse file  → check_file_access
+      - tool_name == "Bash" / other      → PreToolUse Bash  → check_command
+      - Non-JSON / empty                 → legacy CLI path  → check_command
+    """
+    if not raw.strip():
+        return check_command("", mode, config_dir)
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return check_command(raw.strip(), mode, config_dir)
+    if not isinstance(payload, dict):
+        return check_command(str(payload), mode, config_dir)
+
+    # UserPromptSubmit: top-level "prompt" key, no "tool_name"
+    if "prompt" in payload and "tool_name" not in payload:
+        return check_user_prompt(str(payload.get("prompt", "")), mode)
+
+    # PostToolUse: has "tool_response"
+    if "tool_response" in payload:
+        tname = str(payload.get("tool_name", "unknown"))
+        response = payload.get("tool_response", {})
+        output = str(response.get("output", "")) if isinstance(response, dict) else str(response)
+        return check_tool_output(tname, output, mode)
+
+    # PreToolUse — inspect tool_name
+    tool_name = str(payload.get("tool_name", ""))
+    tool_input = payload.get("tool_input", {}) or {}
+
+    if tool_name in _FILE_TOOLS and isinstance(tool_input, dict):
+        file_path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+        return check_file_access(file_path, tool_name, mode, config_dir)
+
+    # Bash or unknown: extract command string and use existing logic
+    command = ""
+    if isinstance(tool_input, dict):
+        for key in ("command", "cmd", "script"):
+            if isinstance(tool_input.get(key), str):
+                command = tool_input[key]
+                break
+    if not command:
+        command = json.dumps(payload, ensure_ascii=False)
+    return check_command(command, mode, config_dir)
 
 
 # ── Logging (best-effort: never let failures affect policy decisions) ──────────
@@ -771,7 +920,7 @@ def check_command(command: str, mode: str = "cli", config_dir: Path | None = Non
 # ── stdin extraction ───────────────────────────────────────────────────────────
 
 def extract_command_from_stdin() -> str:
-    raw = sys.stdin.read()
+    raw = sys.stdin.read()  # stdin is reconfigured to utf-8-sig at startup; BOM stripped automatically
     if not raw.strip():
         return ""
     try:
@@ -793,8 +942,10 @@ def main() -> int:
         parser.add_argument("--mode", choices=["cli", "claude-hook"], default="cli")
         parser.add_argument("--command", help="Command string to check (or pass via stdin)")
         args = parser.parse_args()
-        command = args.command if args.command is not None else extract_command_from_stdin()
-        return check_command(command, args.mode)
+        if args.command is not None:
+            return check_command(args.command, args.mode)
+        raw = sys.stdin.read()
+        return dispatch_hook_event(raw, args.mode)
     except SystemExit:
         raise
     except Exception as e:
