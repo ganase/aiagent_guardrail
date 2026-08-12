@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Agent セキュリティ対策マトリクス</title>
+  <style>
+    :root { color-scheme: light; --ink:#17212b; --muted:#52616f; --line:#ccd6df; --header:#163a5f; --band:#f4f7fa; --partial:#a65b00; --operation:#51636f; }
+    * { box-sizing: border-box; }
+    body { margin: 32px; color:var(--ink); font-family:"Yu Gothic UI","Meiryo",system-ui,sans-serif; line-height:1.55; }
+    h1 { margin:0 0 8px; font-size:1.7rem; color:var(--header); }
+    p { max-width:1100px; margin:0 0 18px; }
+    .legend { display:flex; gap:16px; flex-wrap:wrap; margin:16px 0; font-size:.94rem; }
+    .done { color:#14733a; font-weight:700; } .partial { color:var(--partial); font-weight:700; } .operation { color:var(--operation); font-weight:700; }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); }
+    table { border-collapse:collapse; width:100%; min-width:1100px; font-size:.9rem; }
+    th,td { padding:10px 12px; vertical-align:top; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+    th { color:white; background:var(--header); font-weight:700; }
+    tbody tr:nth-child(even) { background:var(--band); }
+    th:first-child, td:first-child { min-width:175px; font-weight:700; }
+    th:nth-child(2), td:nth-child(2) { min-width:190px; }
+    th:nth-child(3), td:nth-child(3) { min-width:280px; }
+    th:nth-child(4), td:nth-child(4) { min-width:210px; }
+    th:nth-child(5), td:nth-child(5) { min-width:310px; }
+    th:last-child, td:last-child { min-width:310px; border-right:0; }
+    footer { margin-top:18px; color:var(--muted); font-size:.86rem; }
+    @media print { body { margin:12mm; } .table-wrap { overflow:visible; } table { min-width:0; font-size:8pt; } th,td { padding:5px; } }
+  </style>
+</head>
+<body>
+  <h1>AI Agent セキュリティ対策マトリクス</h1>
+  <p>想定リスクごとに、標準パッケージによるカバー状況と、必要な運用上の補完を一覧化したものです。カテゴリは運用設計書の技術設計・運用設計の分類を踏襲しています。</p>
+  <h2>Claude Code / Codex の実装差分</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>統制項目</th><th>リスクの要約</th><th>Claude Code</th><th>Codex</th><th>Codexでの運用上の補完</th><th>テスト方法</th></tr></thead>
+    <tbody>
+      <tr><td>危険コマンド・ファイル操作・Credential検知</td><td>破壊的なコマンドや機密ファイル操作により、端末・データが損なわれる、または認証情報が露出するリスク</td><td><span class="done">●</span> managed-settings のHookで、実行前の危険コマンド・パスとPrompt/Edit/Write等のCredentialを検知・記録</td><td><span class="partial">◐</span> Claude Code相当のHookはない。Windows Sandboxと<code>approval_policy</code>で実行範囲・承認を統制</td><td>端末／ネットワーク側統制、承認内容のレビュー、機密情報を扱う操作の例外申請</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>パッケージ導入のdeny / typosquat判定</td><td>悪性または類似名の依存パッケージを導入し、開発環境や成果物に不正コードが混入するサプライチェーンリスク</td><td><span class="done">●</span> Hookがpip/npm等の導入を判定し、deny・typosquatを記録</td><td><span class="partial">◐</span> <code>ai-pip</code>/<code>ai-npm</code>の標準利用時のみ同じ判定を経由。素のpip/npmは直接検査されない</td><td><code>ai-pip</code>/<code>ai-npm</code>を標準利用。直接導入はレビューと例外申請を必須化</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>変更回数制限・Credentialログ</td><td>自動化の暴走による大量変更・コスト増加、またはCredential露出時に調査証跡が不足するリスク</td><td><span class="done">●</span> Hookで変更回数を制限し、Credential検知ログは値を残さず記録</td><td><span class="operation">○</span> Hook由来の直接制限・Credentialログはない</td><td>利用量レビュー、端末／ネットワーク側ログ、定期的な設定・操作レビューで補完</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+    </tbody>
+  </table></div>  <div class="legend"><span class="done">● 実装済み</span><span class="partial">◐ 部分実装</span><span class="operation">○ 主に運用で対応</span><span>— 標準パッケージの直接の対象外</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>リスク</th><th>リスクの要約</th><th>主な対策カテゴリ</th><th>標準パッケージでのカバー状況</th><th>運用での補完</th><th>主な残余リスク・根拠</th><th>テスト方法</th></tr></thead>
+    <tbody>
+      <tr><td>R1 ローカル・ブラックボックス化</td><td>個人端末に成果物や設定が分散し、所在・変更履歴・再現手順を追えなくなるリスク</td><td>コード管理 / 標準化</td><td>◐ READMEテンプレート・標準構成を配布</td><td>Bitbucket保存、レビュー</td><td>保存・記載は利用者の実施が前提</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R2 ローカル環境の破損</td><td>AIによるコマンド実行やファイル操作で、端末・開発環境・データが損なわれるリスク</td><td>実行環境 / 実行制御</td><td>◐ Sandbox・承認・コマンド制限</td><td>バックアップ、差分確認、事故初動</td><td>許可済み操作の誤用、Sandbox外への影響は残る</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R3 データの散逸</td><td>成果物や業務データが定められた保管先以外に保存され、共有・保全・アクセス管理が不十分になるリスク</td><td>データ管理 / 利用管理</td><td>○ 仕組みによる直接制御なし</td><td>既存基盤・保存場所の確認、部門長承認</td><td>利用者が独自データを作成することは技術的に止めない</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R4 Secret混入</td><td>認証情報・秘密鍵等がソース、プロンプト、ログ、成果物に混入・露出するリスク</td><td>情報保護 / 実行制御</td><td>◐ blocked_paths、ファイルパス検査、Credentialスキャン</td><td>.gitignore、push前確認、レビュー</td><td>正規表現・文字列一致のため検知漏れ・回避があり得る</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R5 情報漏洩・外部送信</td><td>機密情報がAIサービス、外部サイト、第三者ツールへ意図せず送信されるリスク</td><td>接続制御 / 情報保護 / 承認</td><td>◐ Sandbox・Permission/Approval・機密情報保護</td><td>接続先許可、ネットワーク制限、外部送信承認</td><td>ネットワーク制御は環境・端末側の設定に依存</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R6 外部への不正アクセス</td><td>AIを介して外部システム・Webサイトへ権限外または規約外のアクセスを行うリスク</td><td>接続制御 / 事前確認</td><td>○ 仕組みによる直接制御なし</td><td>接続先制限、利用目的確認、個別承認</td><td>スクレイピング頻度や規約適合性をHookでは判断しない</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R7 未許可ランタイム・不正モジュール・サプライチェーン</td><td>未承認の実行環境や悪性・類似名パッケージを導入し、不正コードが混入するリスク</td><td>標準化 / 品質確認</td><td>◐ 許可リスト、install Hook/ラッパー、設定ハッシュ</td><td>例外申請、依存関係確認、定期棚卸し</td><td>直接コマンド回避、別経路導入、推移的依存は残る</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R8 バージョン差異</td><td>利用者ごとのツール・設定差異により、統制の不備や再現不能な不具合が生じるリスク</td><td>標準化 / バージョン管理</td><td>◐ 標準インストーラー、設定ハッシュ</td><td>更新確認、未更新者フォロー</td><td>ハートビート・更新期限通知は未実装</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R9 コスト膨張</td><td>過剰利用・長時間実行・例外利用により、AI利用料や関連コストが想定を超過するリスク</td><td>コスト制御 / 利用管理</td><td>◐ Claude Codeの回数制限、利用量レポート</td><td>利用量・費用レビュー、上限・例外管理</td><td>Codexでは直接の回数制限は発動しない</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R10 プロンプトインジェクション</td><td>外部文書・Webコンテンツ等に埋め込まれた指示により、意図しない操作や情報開示を誘導されるリスク</td><td>入力制御 / 実行制御 / 教育</td><td>◐ AGENTS.md等の指示優先順位、Permission設定</td><td>外部情報の必要性確認、教育</td><td>直接検出・遮断するHookは未実装</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R11 過剰権限・過剰自律性</td><td>必要以上の権限または自律実行を与え、影響範囲の大きい操作を許してしまうリスク</td><td>実行環境 / 接続制御 / 承認</td><td>◐ Sandbox、Permission/Approval、設定標準化</td><td>最小権限、権限棚卸し、部門長承認</td><td>利用者が許可した操作と外部ツールの過剰権限は残る</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R12 AI生成コードの脆弱性混入</td><td>AIが生成・修正したコードに脆弱性、誤実装、ライセンス上の問題が混入するリスク</td><td>品質確認 / レビュー</td><td>○ チェック手順・テンプレートを提供</td><td>セルフ・セキュリティ・チェック、静的解析、テスト、レビュー</td><td>生成コードの安全性を自動保証しない</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R13 承認疲れ・誤承認</td><td>頻繁な承認要求により内容を十分確認せず、危険な操作を許可してしまうリスク</td><td>実行制御 / 教育</td><td>○ Approval機構を利用</td><td>承認観点の明確化、教育、対象の絞り込み</td><td>承認操作の内容理解は自動判定できない</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R14 無限ループ・大量実行</td><td>反復処理や自動化の暴走により、不要な変更・実行時間・利用量が増大するリスク</td><td>コスト制御 / 実行制御</td><td>◐ Claude Codeの変更回数制限、利用量レポート</td><td>時間・費用レビュー、例外管理</td><td>Codexでは直接の回数制限は発動しない</td><td>Claude: <code>pytest -q tests/test_guardrail_check.py</code>で危険コマンド、<code>.env</code>／秘密鍵アクセス、Credential文字列が拒否されることを確認。Codex: 隔離環境で書込み・ネットワーク操作を申請し、Sandbox境界と承認要求を目視確認。</td></tr>
+      <tr><td>R15 ログ・監査不足</td><td>導入・拒否・設定変更・インシデントの証跡が不足し、検知・調査・説明責任を果たせないリスク</td><td>ログ・監査 / バージョン管理</td><td>◐ 導入ログ、拒否イベント、エラー記録、設定ハッシュ</td><td>定期点検、インシデント初動</td><td>監査ログだけでは事故を防止できず、収集範囲にも限界がある</td><td><code>pytest -q tests/test_guardrail_check.py</code>で拒否イベント、Credential警告、設定ハッシュ改ざん検知を確認。実運用では導入・拒否・エラーのログが保存され、定期点検されていることを確認。</td></tr>
+    </tbody>
+  </table></div>
+  <footer>凡例はリスクが解消されたことを示すものではなく、標準パッケージの実装範囲を示します。詳細は「AI Agent 運用設計書」および「既知の限界」を参照してください。</footer>
+</body>
+</html>
