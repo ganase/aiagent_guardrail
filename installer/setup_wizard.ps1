@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
   AI Agent Guardrail セットアップウィザード（GUI）
@@ -13,6 +13,8 @@ Add-Type -AssemblyName System.Drawing
 # ---- Paths ----------------------------------------------------------------
 $repoRoot        = Split-Path -Parent $PSScriptRoot
 $installerScript = Join-Path $PSScriptRoot "install_standard.ps1"
+$workspaceShortcutScript = Join-Path $PSScriptRoot "register_workspace_shortcut.ps1"
+$workspaceRuntimeScript = Join-Path $PSScriptRoot "install_workspace_runtime.ps1"
 
 if (-not (Test-Path $installerScript)) {
     [System.Windows.Forms.MessageBox]::Show(
@@ -35,9 +37,37 @@ function Test-Command([string]$name) {
     $null -ne (Get-Command $name -ErrorAction SilentlyContinue)
 }
 
+# Persist the Python command path for applications launched after SETUP.bat
+# finishes (not merely for this PowerShell process). Claude Code starts its
+# hook through cmd.exe, so a process-only PATH update is insufficient.
+function Add-PythonToUserPath {
+    param([Parameter(Mandatory = $true)][string]$PythonExe)
+
+    $pythonDir  = Split-Path -Parent $PythonExe
+    $scriptsDir = Join-Path $pythonDir 'Scripts'
+    $current    = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $entries    = @($current -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $known      = @{}
+    foreach ($entry in $entries) {
+        $known[[Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\').ToLowerInvariant()] = $true
+    }
+    foreach ($entry in @($pythonDir, $scriptsDir)) {
+        $key = $entry.TrimEnd('\').ToLowerInvariant()
+        if (-not $known.ContainsKey($key)) {
+            $entries += $entry
+            $known[$key] = $true
+        }
+    }
+
+    $updated = $entries -join ';'
+    [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
+    $env:Path = "$pythonDir;$scriptsDir;$env:Path"
+}
+
 $isAdmin       = Test-IsAdmin
 $hasNode       = Test-Command "node"
 $hasNpm        = Test-Command "npm"
+$hasGit        = Test-Command "git"
 $hasClaude     = Test-Command "claude"
 $hasCodex      = Test-Command "codex"
 $hasWinget     = Test-Command "winget"
@@ -45,9 +75,31 @@ $hasWinget     = Test-Command "winget"
 # Python detection: check PATH first (python / python3), then common
 # Miniforge / Mambaforge / Conda / Anaconda installation directories.
 function Find-PythonExe {
+    function Test-PythonExe([string]$Candidate) {
+        if (-not $Candidate -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
+        try {
+            $version = & $Candidate --version 2>$null
+            return ($LASTEXITCODE -eq 0 -and "$version" -match '^Python\s+\d+\.\d+')
+        } catch { return $false }
+    }
+
     foreach ($name in @('python', 'python3')) {
         $c = Get-Command $name -ErrorAction SilentlyContinue
-        if ($c) { return $c.Source }
+        if ($c -and $c.Source -and (Test-Path -LiteralPath $c.Source -PathType Leaf)) {
+            # Windows の App Execution Alias は python.exe として見つかっても、
+            # 実体の Python がアンインストール済みなら Microsoft Store を開くだけです。
+            # 実行可能な CPython であることまで確認して、誤って「検出済み」にしない。
+            if (Test-PythonExe $c.Source) { return $c.Source }
+        }
+    }
+    $wingetPythonRoot = Join-Path $env:LOCALAPPDATA 'Programs\Python'
+    if (Test-Path -LiteralPath $wingetPythonRoot -PathType Container) {
+        $candidates = @()
+        foreach ($directory in Get-ChildItem -LiteralPath $wingetPythonRoot -Directory -ErrorAction SilentlyContinue) {
+            $candidate = Join-Path $directory.FullName 'python.exe'
+            if ((Test-PythonExe $candidate) -and ($candidate -notmatch '(?i)[\\/](?:\.venv|venv)[\\/]')) { $candidates += $candidate }
+        }
+        if ($candidates.Count -gt 0) { return ($candidates | Sort-Object -Descending | Select-Object -First 1) }
     }
     $condaBases = @(
         "$env:USERPROFILE\miniforge3",
@@ -67,20 +119,18 @@ function Find-PythonExe {
     )
     foreach ($base in $condaBases) {
         $py = Join-Path $base 'python.exe'
-        if (Test-Path $py -ErrorAction SilentlyContinue) { return $py }
+        if (Test-PythonExe $py) { return $py }
     }
     return $null
 }
 
 $pythonExePath = Find-PythonExe
 $hasPython     = $null -ne $pythonExePath
-# If Python found outside PATH (conda/miniforge), add its directory to the session
-# PATH so the background install job inherits it and can call python directly.
+# If Python was already installed but was not on PATH, persist both its main
+# directory and Scripts directory. The former implementation updated only
+# this setup process, so Claude Code launched later could not run the hook.
 if ($hasPython) {
-    $pyDir = Split-Path $pythonExePath -Parent
-    if ($env:Path -notlike "*$pyDir*") {
-        $env:Path = "$pyDir;$env:Path"
-    }
+    Add-PythonToUserPath -PythonExe $pythonExePath
 }
 
 $nodeVer   = if ($hasNode)   { (node --version 2>$null) -replace '^v','' } else { $null }
@@ -89,7 +139,7 @@ $claudeVer = if ($hasClaude) {
 } else { $null }
 $codexVer  = if ($hasCodex)  { "検出済み" } else { $null }
 
-$defaultInstallPath = Join-Path $env:USERPROFILE "AIAgent"
+$defaultInstallPath = Join-Path $env:USERPROFILE "AIAgent_Workspace"
 
 # ---- Design tokens --------------------------------------------------------
 $clrHeader    = [System.Drawing.Color]::FromArgb(0, 71, 171)
@@ -115,14 +165,27 @@ $fntBtn   = New-Object System.Drawing.Font("Meiryo UI", 11, [System.Drawing.Font
 $fntLog   = New-Object System.Drawing.Font("Consolas",   9)
 
 # ---- Form -----------------------------------------------------------------
+$contentSize = New-Object System.Drawing.Size(600, 1218)
+
 $form = New-Object System.Windows.Forms.Form
-$form.Text            = "AI Agent Guardrail セットアップ v0.2"
-$form.Size            = New-Object System.Drawing.Size(600, 930)
+$form.Text            = "AI Agent Workspace セットアップ v0.2"
 $form.StartPosition   = "CenterScreen"
-$form.FormBorderStyle = "FixedSingle"
-$form.MaximizeBox     = $false
+$form.FormBorderStyle = "Sizable"
+$form.MaximizeBox     = $true
+$form.MinimumSize     = New-Object System.Drawing.Size(($contentSize.Width + 18), 300)
 $form.BackColor       = $clrBg
 $form.Font            = $fntUI
+$form.AutoScroll         = $true
+$form.AutoScrollMinSize  = $contentSize
+
+# Fit on screen: use the full content height when it fits, otherwise clamp to
+# the visible work area so the window (and its scrollbar) stay on-screen
+# instead of the previous fixed 600x1130 running off the bottom of smaller
+# displays with no way to reach the lower controls.
+$workArea  = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position).WorkingArea
+$formWidth  = $contentSize.Width + 18
+$formHeight = [Math]::Min($contentSize.Height + 40, $workArea.Height - 40)
+$form.Size = New-Object System.Drawing.Size($formWidth, $formHeight)
 
 # ---- Header ---------------------------------------------------------------
 $pnlHeader = New-Object System.Windows.Forms.Panel
@@ -132,7 +195,7 @@ $pnlHeader.BackColor = $clrHeader
 $form.Controls.Add($pnlHeader)
 
 $lblTitle = New-Object System.Windows.Forms.Label
-$lblTitle.Text      = "AI Agent Guardrail"
+$lblTitle.Text      = "AI Agent Workspace"
 $lblTitle.Font      = $fntTitle
 $lblTitle.ForeColor = $clrHeaderFg
 $lblTitle.Location  = New-Object System.Drawing.Point(16, 10)
@@ -194,8 +257,8 @@ $pyText  = if (-not $hasPython) {
 } elseif (Test-Command 'python') {
     "Python 検出済み"
 } else {
-    $condaName = Split-Path (Split-Path $pythonExePath -Parent) -Leaf
-    "Python 検出済み（$condaName）"
+    $pythonInstallName = Split-Path (Split-Path $pythonExePath -Parent) -Leaf
+    "Python 検出済み（$pythonInstallName）"
 }
 
 $pnlDetect.Controls.Add((New-StatusLabel "$adminIcon  $adminText" $adminColor 320 6))
@@ -216,7 +279,7 @@ if (-not $hasNode) {
 $gbTools = New-Object System.Windows.Forms.GroupBox
 $gbTools.Text      = "  ランタイム / AI ツール  "
 $gbTools.Location  = New-Object System.Drawing.Point(14, 174)
-$gbTools.Size      = New-Object System.Drawing.Size(562, 144)
+$gbTools.Size      = New-Object System.Drawing.Size(562, 172)
 $gbTools.BackColor = $clrWhite
 $form.Controls.Add($gbTools)
 
@@ -288,6 +351,27 @@ $cbInstCodex.Location = New-Object System.Drawing.Point(12, 108)
 $cbInstCodex.Size     = New-Object System.Drawing.Size(538, 22)
 $gbTools.Controls.Add($cbInstCodex)
 
+# Git checkbox (winget) — needed by Claude Code to pull git-based plugin
+# marketplaces (e.g. extraKnownMarketplaces entries) configured via the
+# Gateway's authentication settings.
+$cbInstGit = New-Object System.Windows.Forms.CheckBox
+if ($hasGit) {
+    $cbInstGit.Text    = "Git  ─  検出済み（インストール不要）"
+    $cbInstGit.Checked = $false
+    $cbInstGit.Enabled = $false
+} elseif (-not $hasWinget) {
+    $cbInstGit.Text    = "Git  ─  未インストール（winget も未検出のため自動導入できません。手動で導入してください）"
+    $cbInstGit.Checked = $false
+    $cbInstGit.Enabled = $false
+} else {
+    $cbInstGit.Text    = "Git  ─  未インストール → セットアップ時にインストールします  (winget install Git.Git)"
+    $cbInstGit.Checked = $true
+    $cbInstGit.Enabled = $true
+}
+$cbInstGit.Location = New-Object System.Drawing.Point(12, 136)
+$cbInstGit.Size     = New-Object System.Drawing.Size(538, 22)
+$gbTools.Controls.Add($cbInstGit)
+
 # Claude Code / Codex need npm (Node.js). If Node.js is absent and the user
 # unchecks its auto-install box, disable the two npm-dependent checkboxes so
 # the install can't silently fail later for a reason the user can't see here.
@@ -305,10 +389,166 @@ function Update-ClaudeCodexAvailability {
 $cbInstNode.Add_CheckedChanged({ Update-ClaudeCodexAvailability })
 Update-ClaudeCodexAvailability
 
+# ---- Group: Authentication settings ---------------------------------------
+# Always show these controls. Tool detection only controls installation; it
+# must never hide the credentials needed to refresh an existing setup.
+# Two modes per tool: "Gateway" (paste output from an internal AI Gateway's Set
+# Up screen, format-specific) or "API" (generic Key/Model/Base URL, works with
+# any Anthropic/OpenAI-compatible endpoint). Radio buttons live in their own
+# Panel per tool because WinForms treats all RadioButtons sharing one direct
+# parent as a single mutually-exclusive group — without separate Panels the
+# Claude and Codex radios would fight each other.
+$gbAuth = New-Object System.Windows.Forms.GroupBox
+$gbAuth.Text      = "  認証設定  "
+$gbAuth.Location  = New-Object System.Drawing.Point(14, 356)
+$gbAuth.Size      = New-Object System.Drawing.Size(562, 184)
+$gbAuth.BackColor = $clrWhite
+$form.Controls.Add($gbAuth)
+
+function New-AuthModeRadio([string]$text, [int]$x, [int]$y) {
+    $rb = New-Object System.Windows.Forms.RadioButton
+    $rb.Text     = $text
+    $rb.Location = New-Object System.Drawing.Point($x, $y)
+    $rb.AutoSize = $true
+    $rb
+}
+
+# ---- Claude Code auth ----
+$lblClaudeAuth = New-Object System.Windows.Forms.Label
+$lblClaudeAuth.Text     = "Claude Code の認証設定"
+$lblClaudeAuth.Location = New-Object System.Drawing.Point(10, 19)
+$lblClaudeAuth.AutoSize = $true
+$gbAuth.Controls.Add($lblClaudeAuth)
+
+$pnlClaudeRadio = New-Object System.Windows.Forms.Panel
+$pnlClaudeRadio.Location  = New-Object System.Drawing.Point(160, 16)
+$pnlClaudeRadio.Size      = New-Object System.Drawing.Size(388, 20)
+$pnlClaudeRadio.BackColor = $clrWhite
+$gbAuth.Controls.Add($pnlClaudeRadio)
+$rbClaudeGateway = New-AuthModeRadio "Gateway形式で貼り付け" 0 0
+$rbClaudeGateway.Checked = $true
+$rbClaudeApi     = New-AuthModeRadio "APIを直接指定" 180 0
+$pnlClaudeRadio.Controls.Add($rbClaudeGateway)
+$pnlClaudeRadio.Controls.Add($rbClaudeApi)
+
+$pnlClaudeGateway = New-Object System.Windows.Forms.Panel
+$pnlClaudeGateway.Location  = New-Object System.Drawing.Point(10, 38)
+$pnlClaudeGateway.Size      = New-Object System.Drawing.Size(538, 38)
+$pnlClaudeGateway.BackColor = $clrWhite
+$gbAuth.Controls.Add($pnlClaudeGateway)
+$tbClaudeAuth = New-Object System.Windows.Forms.TextBox
+$tbClaudeAuth.Multiline  = $true
+$tbClaudeAuth.ScrollBars = "Vertical"
+$tbClaudeAuth.Location   = New-Object System.Drawing.Point(0, 0)
+$tbClaudeAuth.Size       = New-Object System.Drawing.Size(538, 38)
+$tbClaudeAuth.Font       = $fntSmall
+$pnlClaudeGateway.Controls.Add($tbClaudeAuth)
+
+$pnlClaudeApi = New-Object System.Windows.Forms.Panel
+$pnlClaudeApi.Location  = New-Object System.Drawing.Point(10, 38)
+$pnlClaudeApi.Size      = New-Object System.Drawing.Size(538, 38)
+$pnlClaudeApi.BackColor = $clrWhite
+$pnlClaudeApi.Visible   = $false
+$gbAuth.Controls.Add($pnlClaudeApi)
+
+function New-AuthField($parent, [string]$label, [int]$x, [int]$width) {
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text     = $label
+    $lbl.Font     = $fntSmall
+    $lbl.Location = New-Object System.Drawing.Point($x, 0)
+    $lbl.AutoSize = $true
+    $parent.Controls.Add($lbl)
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Location = New-Object System.Drawing.Point($x, 16)
+    $tb.Size     = New-Object System.Drawing.Size($width, 20)
+    $tb.Font     = $fntSmall
+    $parent.Controls.Add($tb)
+    $tb
+}
+
+$tbClaudeApiKey     = New-AuthField $pnlClaudeApi "APIキー"          0   170
+$tbClaudeApiModel   = New-AuthField $pnlClaudeApi "モデル名"        184  170
+$tbClaudeApiBaseUrl = New-AuthField $pnlClaudeApi "Base URL（任意）" 368  170
+
+# ---- Codex auth ----
+$lblCodexAuth = New-Object System.Windows.Forms.Label
+$lblCodexAuth.Text     = "Codex の認証設定"
+$lblCodexAuth.Location = New-Object System.Drawing.Point(10, 81)
+$lblCodexAuth.AutoSize = $true
+$gbAuth.Controls.Add($lblCodexAuth)
+
+$pnlCodexRadio = New-Object System.Windows.Forms.Panel
+$pnlCodexRadio.Location  = New-Object System.Drawing.Point(160, 78)
+$pnlCodexRadio.Size      = New-Object System.Drawing.Size(388, 20)
+$pnlCodexRadio.BackColor = $clrWhite
+$gbAuth.Controls.Add($pnlCodexRadio)
+$rbCodexGateway = New-AuthModeRadio "Gateway形式で貼り付け" 0 0
+$rbCodexGateway.Checked = $true
+$rbCodexApi     = New-AuthModeRadio "APIを直接指定" 180 0
+$pnlCodexRadio.Controls.Add($rbCodexGateway)
+$pnlCodexRadio.Controls.Add($rbCodexApi)
+
+$pnlCodexGateway = New-Object System.Windows.Forms.Panel
+$pnlCodexGateway.Location  = New-Object System.Drawing.Point(10, 100)
+$pnlCodexGateway.Size      = New-Object System.Drawing.Size(538, 38)
+$pnlCodexGateway.BackColor = $clrWhite
+$gbAuth.Controls.Add($pnlCodexGateway)
+$tbCodexAuth = New-Object System.Windows.Forms.TextBox
+$tbCodexAuth.Multiline  = $true
+$tbCodexAuth.ScrollBars = "Vertical"
+$tbCodexAuth.Location   = New-Object System.Drawing.Point(0, 0)
+$tbCodexAuth.Size       = New-Object System.Drawing.Size(538, 38)
+$tbCodexAuth.Font       = $fntSmall
+$pnlCodexGateway.Controls.Add($tbCodexAuth)
+
+$pnlCodexApi = New-Object System.Windows.Forms.Panel
+$pnlCodexApi.Location  = New-Object System.Drawing.Point(10, 100)
+$pnlCodexApi.Size      = New-Object System.Drawing.Size(538, 38)
+$pnlCodexApi.BackColor = $clrWhite
+$pnlCodexApi.Visible   = $false
+$gbAuth.Controls.Add($pnlCodexApi)
+
+$tbCodexApiKey     = New-AuthField $pnlCodexApi "APIキー"          0   170
+$tbCodexApiModel   = New-AuthField $pnlCodexApi "モデル名"        184  170
+$tbCodexApiBaseUrl = New-AuthField $pnlCodexApi "Base URL（任意）" 368  170
+
+$lblAuthNote = New-Object System.Windows.Forms.Label
+$lblAuthNote.Text      = "Gateway形式: Set Up 画面で生成した内容を貼り付け（組織指定の認証サービス 専用形式）。APIを直接指定: Anthropic / OpenAI 互換のAPIキー・モデル名を入力（Base URLは空欄なら公式デフォルト）。貼り付け・入力内容は画面ログ・インストールログに出力しません。"
+$lblAuthNote.Font      = $fntSmall
+$lblAuthNote.ForeColor = [System.Drawing.Color]::Gray
+$lblAuthNote.Location  = New-Object System.Drawing.Point(10, 141)
+$lblAuthNote.Size      = New-Object System.Drawing.Size(542, 40)
+$gbAuth.Controls.Add($lblAuthNote)
+
+function Update-ClaudeAuthMode {
+    $pnlClaudeGateway.Visible = $rbClaudeGateway.Checked
+    $pnlClaudeApi.Visible     = $rbClaudeApi.Checked
+}
+$rbClaudeGateway.Add_CheckedChanged({ Update-ClaudeAuthMode })
+$rbClaudeApi.Add_CheckedChanged({ Update-ClaudeAuthMode })
+Update-ClaudeAuthMode
+
+function Update-CodexAuthMode {
+    $pnlCodexGateway.Visible = $rbCodexGateway.Checked
+    $pnlCodexApi.Visible     = $rbCodexApi.Checked
+}
+$rbCodexGateway.Add_CheckedChanged({ Update-CodexAuthMode })
+$rbCodexApi.Add_CheckedChanged({ Update-CodexAuthMode })
+Update-CodexAuthMode
+
+# Preserve the editable Claude JSON across reruns when it is already present.
+# Codex's Gateway input is an executable setup script and is deliberately not
+# persisted; config.toml is its output, not a script which may safely be
+# executed again.
+$existingClaudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
+if (Test-Path -LiteralPath $existingClaudeSettings -PathType Leaf) {
+    try { $tbClaudeAuth.Text = Get-Content -LiteralPath $existingClaudeSettings -Raw -Encoding UTF8 } catch { }
+}
+
 # ---- Group: Install path --------------------------------------------------
 $gbPath = New-Object System.Windows.Forms.GroupBox
 $gbPath.Text      = "  インストール先  "
-$gbPath.Location  = New-Object System.Drawing.Point(14, 328)
+$gbPath.Location  = New-Object System.Drawing.Point(14, 550)
 $gbPath.Size      = New-Object System.Drawing.Size(562, 74)
 $gbPath.BackColor = $clrWhite
 $form.Controls.Add($gbPath)
@@ -347,8 +587,8 @@ $btnBrowse.Add_Click({
 # ---- Group: Guardrail options ---------------------------------------------
 $gbOpts = New-Object System.Windows.Forms.GroupBox
 $gbOpts.Text      = "  ガードレール設定  "
-$gbOpts.Location  = New-Object System.Drawing.Point(14, 412)
-$gbOpts.Size      = New-Object System.Drawing.Size(562, 112)
+$gbOpts.Location  = New-Object System.Drawing.Point(14, 634)
+$gbOpts.Size      = New-Object System.Drawing.Size(562, 140)
 $gbOpts.BackColor = $clrWhite
 $form.Controls.Add($gbOpts)
 
@@ -373,19 +613,25 @@ $cbAddPath.Location = New-Object System.Drawing.Point(12, 80)
 $cbAddPath.Size     = New-Object System.Drawing.Size(540, 22)
 $gbOpts.Controls.Add($cbAddPath)
 
+$lblWorkspaceShortcut = New-Object System.Windows.Forms.Label
+$lblWorkspaceShortcut.Text      = "デスクトップに「AI Agent Workspace」ショートカットを作成します（起動後に Claude Code / Codex を選択できます）。"
+$lblWorkspaceShortcut.Location  = New-Object System.Drawing.Point(12, 110)
+$lblWorkspaceShortcut.Size      = New-Object System.Drawing.Size(540, 22)
+$lblWorkspaceShortcut.ForeColor = [System.Drawing.Color]::DarkGreen
+$gbOpts.Controls.Add($lblWorkspaceShortcut)
 # ---- Notes label (fixed install destination) ------------------------------
 $lblNote = New-Object System.Windows.Forms.Label
 $lblNote.Text      = "Claude Code のバイナリ（~\.local\bin\claude.exe）と設定（~\.claude\）はツール側が管理するため、移動できません。"
 $lblNote.Font      = $fntSmall
 $lblNote.ForeColor = [System.Drawing.Color]::Gray
-$lblNote.Location  = New-Object System.Drawing.Point(14, 534)
+$lblNote.Location  = New-Object System.Drawing.Point(14, 812)
 $lblNote.Size      = New-Object System.Drawing.Size(562, 30)
 $form.Controls.Add($lblNote)
 
 # ---- Install button -------------------------------------------------------
 $btnInstall = New-Object System.Windows.Forms.Button
 $btnInstall.Text      = "インストール実行"
-$btnInstall.Location  = New-Object System.Drawing.Point(14, 570)
+$btnInstall.Location  = New-Object System.Drawing.Point(14, 848)
 $btnInstall.Size      = New-Object System.Drawing.Size(562, 52)
 $btnInstall.Font      = $fntBtn
 $btnInstall.BackColor = $clrInstall
@@ -398,12 +644,12 @@ $form.Controls.Add($btnInstall)
 # ---- Log area -------------------------------------------------------------
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text     = "インストールログ:"
-$lblLog.Location = New-Object System.Drawing.Point(14, 634)
+$lblLog.Location = New-Object System.Drawing.Point(14, 912)
 $lblLog.AutoSize = $true
 $form.Controls.Add($lblLog)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location    = New-Object System.Drawing.Point(14, 654)
+$rtbLog.Location    = New-Object System.Drawing.Point(14, 932)
 $rtbLog.Size        = New-Object System.Drawing.Size(562, 186)
 $rtbLog.Font        = $fntLog
 $rtbLog.ReadOnly    = $true
@@ -416,7 +662,7 @@ $form.Controls.Add($rtbLog)
 # ---- Done button ----------------------------------------------------------
 $btnDone = New-Object System.Windows.Forms.Button
 $btnDone.Text      = "（インストール完了後に有効になります）"
-$btnDone.Location  = New-Object System.Drawing.Point(14, 852)
+$btnDone.Location  = New-Object System.Drawing.Point(14, 1130)
 $btnDone.Size      = New-Object System.Drawing.Size(562, 38)
 $btnDone.Font      = $fntUI
 $btnDone.Enabled   = $false
@@ -478,12 +724,73 @@ $btnInstall.Add_Click({
         return
     }
 
+    $claudeAuthMode = if ($rbClaudeApi.Checked) { "api" } else { "gateway" }
+    $codexAuthMode  = if ($rbCodexApi.Checked)  { "api" } else { "gateway" }
+
+    $claudeAuth        = $tbClaudeAuth.Text.Trim()
+    $claudeApiKey      = $tbClaudeApiKey.Text.Trim()
+    $claudeApiModel    = $tbClaudeApiModel.Text.Trim()
+    $claudeApiBaseUrl  = $tbClaudeApiBaseUrl.Text.Trim()
+    $codexAuth         = $tbCodexAuth.Text.Trim()
+    $codexApiKey       = $tbCodexApiKey.Text.Trim()
+    $codexApiModel     = $tbCodexApiModel.Text.Trim()
+    $codexApiBaseUrl   = $tbCodexApiBaseUrl.Text.Trim()
+
+    if ($claudeAuthMode -eq "gateway" -and [string]::IsNullOrWhiteSpace($claudeAuth)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Claude Code の認証設定を、組織指定の認証サービス の Set Up 画面から貼り付けてください。",
+            "入力エラー",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+    if ($claudeAuthMode -eq "api" -and ([string]::IsNullOrWhiteSpace($claudeApiKey) -or [string]::IsNullOrWhiteSpace($claudeApiModel))) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Claude Code の APIキーとモデル名を入力してください（Base URLは任意です）。",
+            "入力エラー",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+    if ($codexAuthMode -eq "gateway" -and [string]::IsNullOrWhiteSpace($codexAuth)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Codex の認証設定を、組織指定の認証サービス の Set Up 画面から貼り付けてください。",
+            "入力エラー",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+    if ($codexAuthMode -eq "api" -and ([string]::IsNullOrWhiteSpace($codexApiKey) -or [string]::IsNullOrWhiteSpace($codexApiModel))) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Codex の APIキーとモデル名を入力してください（Base URLは任意です）。",
+            "入力エラー",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+
     # Lock UI
     $btnInstall.Enabled   = $false
     $btnInstall.Text      = "インストール中..."
     $btnInstall.BackColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
     $btnBrowse.Enabled    = $false
     $tbPath.ReadOnly      = $true
+    $tbClaudeAuth.ReadOnly = $true
+    $tbCodexAuth.ReadOnly  = $true
+    $tbClaudeApiKey.ReadOnly     = $true
+    $tbClaudeApiModel.ReadOnly   = $true
+    $tbClaudeApiBaseUrl.ReadOnly = $true
+    $tbCodexApiKey.ReadOnly      = $true
+    $tbCodexApiModel.ReadOnly    = $true
+    $tbCodexApiBaseUrl.ReadOnly  = $true
+    $rbClaudeGateway.Enabled = $false
+    $rbClaudeApi.Enabled     = $false
+    $rbCodexGateway.Enabled  = $false
+    $rbCodexApi.Enabled      = $false
     $cbInstNode.Enabled    = $false
     $cbInstPython.Enabled  = $false
     $cbInstClaude.Enabled  = $false
@@ -503,15 +810,29 @@ $btnInstall.Add_Click({
     $snap_path         = $installPath
     $snap_instNode     = $cbInstNode.Checked
     $snap_instPython   = $cbInstPython.Checked
+    $snap_instGit      = $cbInstGit.Checked
     $snap_instClaude   = $cbInstClaude.Checked
     $snap_instCodex    = $cbInstCodex.Checked
     $snap_claude       = $cbClaude.Checked
     $snap_codex        = $cbCodexConfig.Checked
     $snap_addpath      = $cbAddPath.Checked
+    $snap_workspaceShortcutScript = $workspaceShortcutScript
+    $snap_workspaceRuntimeScript = $workspaceRuntimeScript
     $snap_hasNode      = $hasNode
     $snap_hasPython    = $hasPython
+    $snap_hasGit       = $hasGit
     $snap_hasClaude    = $hasClaude
     $snap_hasCodex     = $hasCodex
+    $snap_claudeAuthMode   = $claudeAuthMode
+    $snap_claudeAuth       = $claudeAuth
+    $snap_claudeApiKey     = $claudeApiKey
+    $snap_claudeApiModel   = $claudeApiModel
+    $snap_claudeApiBaseUrl = $claudeApiBaseUrl
+    $snap_codexAuthMode    = $codexAuthMode
+    $snap_codexAuth        = $codexAuth
+    $snap_codexApiKey      = $codexApiKey
+    $snap_codexApiModel    = $codexApiModel
+    $snap_codexApiBaseUrl  = $codexApiBaseUrl
 
     # Background job
     $script:installJob = Start-Job -ScriptBlock {
@@ -520,6 +841,7 @@ $btnInstall.Add_Click({
             [string]$installRoot,
             [bool]$instNode,
             [bool]$instPython,
+            [bool]$instGit,
             [bool]$instClaude,
             [bool]$instCodex,
             [bool]$optClaude,
@@ -527,8 +849,22 @@ $btnInstall.Add_Click({
             [bool]$optPath,
             [bool]$nodeDetected,
             [bool]$pythonDetected,
+            [bool]$gitDetected,
             [bool]$claudeDetected,
-            [bool]$codexDetected
+            [bool]$codexDetected,
+            [string]$claudeAuthMode,
+            [string]$claudeAuth,
+            [string]$claudeApiKey,
+            [string]$claudeApiModel,
+            [string]$claudeApiBaseUrl,
+            [string]$codexAuthMode,
+            [string]$codexAuth,
+            [string]$codexApiKey,
+            [string]$codexApiModel,
+            [string]$codexApiBaseUrl,
+            [string]$workspaceShortcutScript,
+            [string]$workspaceRuntimeScript,
+            [string]$repoRoot
         )
 
         # winget installs write PATH to the registry but don't update the
@@ -541,9 +877,187 @@ $btnInstall.Add_Click({
             $env:Path = "$machine;$user"
         }
 
-        if ($instNode -or $instPython) {
-            Write-Output "注意: 管理者権限がない場合、Node.js/Pythonのインストールが権限不足で失敗することがあります。"
+        # SETUP.bat switches the console to UTF-8. Keep the job's external
+        # command output in the same encoding so Japanese winget/npm messages
+        # appear correctly in the installation log.
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+        $OutputEncoding = [Console]::OutputEncoding
+
+        if ($instNode -or $instPython -or $instGit) {
+            Write-Output "注意: 管理者権限がない場合、Node.js/Python/Gitのインストールが権限不足で失敗することがあります。"
             Write-Output ""
+        }
+
+        function Set-ClaudeGatewayAuthentication {
+            param([string]$Value)
+            # The Gateway "Set Up" screen sometimes emits a raw JSON object, and
+            # sometimes a full PowerShell script (like the Codex box) that writes
+            # settings.json via a here-string. In the script form, earlier lines
+            # (e.g. an `if (...) { ... }` guard) contain their own brace pair, so
+            # naively taking the first "{" to the last "}" in the whole pasted
+            # text swallows that unrelated code into the "JSON" and breaks
+            # parsing. Prefer the here-string body when one is present.
+            $hereStringPattern = '(?ms)^[ \t]*@["''][ \t]*\r?\n(?<body>.*?)^[ \t]*["'']@'
+            $hereMatch = [regex]::Match($Value, $hereStringPattern)
+            $source = if ($hereMatch.Success) { $hereMatch.Groups['body'].Value } else { $Value }
+
+            $first = $source.IndexOf('{')
+            $last = $source.LastIndexOf('}')
+            if ($first -lt 0 -or $last -le $first) {
+                throw "Claude Code の認証設定から JSON を読み取れませんでした。"
+            }
+            $json = $source.Substring($first, $last - $first + 1)
+            try { $settings = $json | ConvertFrom-Json -ErrorAction Stop } catch {
+                throw "Claude Code の認証設定の JSON が不正です。"
+            }
+            if ($null -eq $settings.env -or @($settings.env.PSObject.Properties).Count -eq 0) {
+                throw "Claude Code の認証設定に env がありません（空です）。Set Up 画面で生成した内容を貼り付けてください。"
+            }
+            $claudeDir = Join-Path $env:USERPROFILE '.claude'
+            New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
+            $target = Join-Path $claudeDir 'settings.json'
+            Set-Content -LiteralPath $target -Value $json -Encoding UTF8
+            # Verify the write actually landed: a silent failure here (wrong path,
+            # locked file, redirected profile) previously went unnoticed and left
+            # Claude Code with no Gateway credentials at all.
+            if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+                throw "settings.json の書き込みを確認できませんでした ($target)。"
+            }
+        }
+
+        # Generic Anthropic-API-compatible path: merge only the ANTHROPIC_*
+        # keys inside `env`, preserving any other top-level keys (permissions
+        # etc.) and any other env entries a prior Gateway paste may have left
+        # behind. Unlike the Gateway path this never overwrites the whole file.
+        function Set-ClaudeApiAuthentication {
+            param(
+                [Parameter(Mandatory = $true)][string]$ApiKey,
+                [Parameter(Mandatory = $true)][string]$Model,
+                [string]$BaseUrl
+            )
+            $claudeDir = Join-Path $env:USERPROFILE '.claude'
+            New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
+            $target = Join-Path $claudeDir 'settings.json'
+
+            $settings = $null
+            if (Test-Path -LiteralPath $target -PathType Leaf) {
+                try { $settings = Get-Content -LiteralPath $target -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } catch {
+                    throw "既存の settings.json を読み取れませんでした。手動で確認してください ($target)。"
+                }
+            }
+            if ($null -eq $settings) { $settings = [PSCustomObject]@{} }
+            if ($null -eq $settings.env) {
+                $settings | Add-Member -MemberType NoteProperty -Name env -Value ([PSCustomObject]@{}) -Force
+            }
+
+            function Set-EnvKey($obj, [string]$key, [string]$value) {
+                if ([string]::IsNullOrWhiteSpace($value)) {
+                    if ($obj.PSObject.Properties[$key]) { $obj.PSObject.Properties.Remove($key) }
+                } elseif ($obj.PSObject.Properties[$key]) {
+                    $obj.$key = $value
+                } else {
+                    $obj | Add-Member -MemberType NoteProperty -Name $key -Value $value -Force
+                }
+            }
+            Set-EnvKey $settings.env "ANTHROPIC_API_KEY"  $ApiKey
+            Set-EnvKey $settings.env "ANTHROPIC_MODEL"    $Model
+            Set-EnvKey $settings.env "ANTHROPIC_BASE_URL" $BaseUrl
+
+            $json = $settings | ConvertTo-Json -Depth 10
+            Set-Content -LiteralPath $target -Value $json -Encoding UTF8
+            if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+                throw "settings.json の書き込みを確認できませんでした ($target)。"
+            }
+        }
+
+        function Invoke-CodexGatewayAuthentication {
+            param([string]$Value)
+            $configPath = Join-Path $env:USERPROFILE ".codex\config.toml"
+            $beforeHash = if (Test-Path -LiteralPath $configPath) { (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash } else { $null }
+
+            $tempScript = Join-Path ([IO.Path]::GetTempPath()) ("aiagent_codex_auth_" + [guid]::NewGuid().ToString('N') + '.ps1')
+            try {
+                Set-Content -LiteralPath $tempScript -Value $Value -Encoding UTF8
+                # The official Gateway output is a PowerShell setup script. Do not
+                # relay its stdout/stderr, as it can contain credential values.
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempScript 1>$null 2>$null
+                if ($LASTEXITCODE -ne 0) { throw "Codex の認証設定スクリプトの実行に失敗しました (exit $LASTEXITCODE)。" }
+            } finally {
+                Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+            }
+
+            # The script is expected to write ~/.codex/config.toml. If the file is
+            # missing or byte-for-byte unchanged, the script silently did nothing
+            # (e.g. wrong target, needed interactive input) and Codex would be left
+            # without Gateway credentials despite the log showing "success".
+            if (-not (Test-Path -LiteralPath $configPath)) {
+                throw "Codex の認証設定スクリプトを実行しましたが、$configPath が作成されませんでした。貼り付け内容を確認してください。"
+            }
+            $afterHash = (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash
+            if ($afterHash -eq $beforeHash) {
+                throw "Codex の認証設定スクリプトを実行しましたが、$configPath の内容が更新されませんでした（内容は伏せています）。貼り付け内容を確認してください。"
+            }
+        }
+
+        # Generic OpenAI-API-compatible path. Unlike the Gateway path (which
+        # executes an arbitrary pasted script), this only ever writes a
+        # marker-delimited block it fully controls, so it never needs to
+        # trust or execute pasted content. The block is prepended because TOML
+        # root keys (model = ..., model_provider = ...) must appear before the
+        # first table header; Set-CodexWindowsSection (install_standard.ps1)
+        # separately manages a [windows] table appended at the end, so the two
+        # blocks never overlap. Uses explicit begin/end markers (not an
+        # implicit "next [section]" boundary) because this block can itself
+        # contain a child table ([model_providers.custom]).
+        function Set-CodexApiAuthentication {
+            param(
+                [Parameter(Mandatory = $true)][string]$ApiKey,
+                [Parameter(Mandatory = $true)][string]$Model,
+                [string]$BaseUrl
+            )
+            $codexDir = Join-Path $env:USERPROFILE ".codex"
+            New-Item -ItemType Directory -Path $codexDir -Force | Out-Null
+            $configPath = Join-Path $codexDir "config.toml"
+
+            $beginMarker = "# --- AI Agent Guardrail: API auth settings (managed automatically) ---"
+            $endMarker   = "# --- AI Agent Guardrail: end API auth settings ---"
+
+            $lines = @()
+            $lines += $beginMarker
+            $lines += "model = `"$Model`""
+            $envKeyName = if ([string]::IsNullOrWhiteSpace($BaseUrl)) { "OPENAI_API_KEY" } else { "AIAGENT_CODEX_API_KEY" }
+            if (-not [string]::IsNullOrWhiteSpace($BaseUrl)) {
+                $lines += "model_provider = `"custom`""
+                $lines += ""
+                $lines += "[model_providers.custom]"
+                $lines += "base_url = `"$BaseUrl`""
+                $lines += "env_key = `"$envKeyName`""
+                $lines += "wire_api = `"chat`""
+            }
+            $lines += $endMarker
+            $newBlock = ($lines -join "
+") + "
+"
+
+            if (Test-Path -LiteralPath $configPath) {
+                Copy-Item -LiteralPath $configPath "$configPath.bak.$(Get-Date -Format yyyyMMddHHmmssfff)"
+                $existing = Get-Content -LiteralPath $configPath -Raw
+                if ($existing -match [regex]::Escape($beginMarker)) {
+                    $pattern = [regex]::Escape($beginMarker) + '(?s).*?' + [regex]::Escape($endMarker) + '\r?\n?'
+                    $existing = [regex]::Replace($existing, $pattern, '')
+                }
+                $existing = $existing.TrimStart("`r", "`n")
+                $final = "$newBlock
+$existing"
+            } else {
+                $final = $newBlock
+            }
+            Set-Content -LiteralPath $configPath -Encoding UTF8 -Value $final -NoNewline
+
+            # User+Process scope so the key is visible both to future terminal
+            # sessions and to any step later in this same job that shells out.
+            [Environment]::SetEnvironmentVariable($envKeyName, $ApiKey, 'User')
+            Set-Item -Path "Env:$envKeyName" -Value $ApiKey
         }
 
         # ---- Step 0: Node.js (winget) ----
@@ -580,6 +1094,23 @@ $btnInstall.Add_Click({
             Write-Output ""
         }
 
+        # ---- Step 0.75: Git (winget) ----
+        if ($instGit -and -not $gitDetected) {
+            Write-Output "=== Git のインストール ==="
+            Write-Output "winget install --id Git.Git を実行しています..."
+            & winget install --id Git.Git -e --silent --accept-package-agreements --accept-source-agreements 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Output "ERROR: Git のインストールに失敗しました (exit $LASTEXITCODE)"
+                exit 1
+            }
+            Update-SessionPath
+            Write-Output "Git のインストール完了"
+            Write-Output ""
+        } elseif ($gitDetected) {
+            Write-Output "=== Git: 検出済み（スキップ）==="
+            Write-Output ""
+        }
+
         # ---- Step 1: Claude Code ----
         if ($instClaude -and -not $claudeDetected) {
             Write-Output "=== Claude Code のインストール ==="
@@ -612,24 +1143,79 @@ $btnInstall.Add_Click({
             Write-Output ""
         }
 
-        # ---- Step 3: Guardrail ----
+        # ---- Step 3: Authentication ----
+        Write-Output "=== Claude Code の認証設定を適用 ($claudeAuthMode) ==="
+        try {
+            if ($claudeAuthMode -eq "api") {
+                Set-ClaudeApiAuthentication -ApiKey $claudeApiKey -Model $claudeApiModel -BaseUrl $claudeApiBaseUrl
+            } else {
+                Set-ClaudeGatewayAuthentication -Value $claudeAuth
+            }
+        } catch {
+            Write-Output "ERROR: $($_.Exception.Message)"
+            exit 1
+        }
+        Write-Output "Claude Code の認証設定を適用しました"
+        Write-Output ""
+
+        Write-Output "=== Codex の認証設定を適用 ($codexAuthMode) ==="
+        try {
+            if ($codexAuthMode -eq "api") {
+                Set-CodexApiAuthentication -ApiKey $codexApiKey -Model $codexApiModel -BaseUrl $codexApiBaseUrl
+            } else {
+                Invoke-CodexGatewayAuthentication -Value $codexAuth
+            }
+        } catch {
+            Write-Output "ERROR: $($_.Exception.Message)"
+            exit 1
+        }
+        Write-Output "Codex の認証設定を適用しました"
+        Write-Output ""
+
+        # ---- Step 4: Guardrail ----
         Write-Output "=== ガードレールのインストール ==="
         $argList = @(
             "-NoProfile", "-ExecutionPolicy", "Bypass",
             "-File", $scriptPath,
-            "-InstallRoot", $installRoot
+            "-InstallRoot", (Join-Path $installRoot "guardrails")
         )
         if ($optClaude) { $argList += "-ConfigureClaude" }
         if ($optCodex)  { $argList += "-ConfigureCodex" }
         if ($optPath)   { $argList += "-AddWrappersToUserPath" }
         & powershell.exe @argList 2>&1
 
+        # ---- Step 5: workspace runtime (independent of the downloaded ZIP) ----
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workspaceRuntimeScript -WorkspaceRoot $installRoot -PackageRoot $repoRoot 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "ワークスペース資産の配置に失敗しました" }
+
+        # ---- Step 6: AI Agent Workspace shortcut ----
+        Write-Output ""
+        Write-Output "=== AI Agent Workspace ショートカットの作成 ==="
+        try {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workspaceShortcutScript -WorkspaceRoot $installRoot 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "ショートカット作成スクリプトが exit $LASTEXITCODE で終了しました。" }
+        } catch {
+            Write-Output "WARNING: AI Agent Workspace のショートカット作成に失敗しました: $($_.Exception.Message)"
+        }
+
+        # Register the installed silent mount launcher after its configuration
+        # has been copied into the installed workspace.
+        $boxStartupScript = Join-Path $installRoot 'launcher\register_box_startup.ps1'
+        if (Test-Path -LiteralPath $boxStartupScript -PathType Leaf) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $boxStartupScript 2>&1
+            if ($LASTEXITCODE -ne 0) { Write-Output "WARNING: 共有ドライブのスタートアップ登録に失敗しました。" }
+        }
     } -ArgumentList $snap_script, $snap_path,
-                    $snap_instNode, $snap_instPython,
+                    $snap_instNode, $snap_instPython, $snap_instGit,
                     $snap_instClaude, $snap_instCodex,
                     $snap_claude, $snap_codex, $snap_addpath,
-                    $snap_hasNode, $snap_hasPython,
-                    $snap_hasClaude, $snap_hasCodex
+                    $snap_hasNode, $snap_hasPython, $snap_hasGit,
+                    $snap_hasClaude, $snap_hasCodex,
+                    $snap_claudeAuthMode, $snap_claudeAuth,
+                    $snap_claudeApiKey, $snap_claudeApiModel, $snap_claudeApiBaseUrl,
+                    $snap_codexAuthMode, $snap_codexAuth,
+                    $snap_codexApiKey, $snap_codexApiModel, $snap_codexApiBaseUrl,
+                    $snap_workspaceShortcutScript, $snap_workspaceRuntimeScript, $repoRoot
 
     # Poll timer
     $script:pollTimer = New-Object System.Windows.Forms.Timer
@@ -664,7 +1250,7 @@ $btnInstall.Add_Click({
                 AppendLog ""
                 AppendLog "  次のステップ:" ([System.Drawing.Color]::DarkGreen)
                 AppendLog "  1. ターミナルを再起動して PATH を更新してください。" ([System.Drawing.Color]::DarkGreen)
-                AppendLog "  2. Claude Code を再起動してガードレールが有効か確認してください。" ([System.Drawing.Color]::DarkGreen)
+                AppendLog "  2. Restart Claude Code completely before use." ([System.Drawing.Color]::DarkGreen)
                 AppendLog "============================================" ([System.Drawing.Color]::DarkGreen)
                 $btnDone.Text      = "閉じる"
                 $btnDone.BackColor = $clrDone

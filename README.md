@@ -1,4 +1,4 @@
-# aiagent_guardrail
+# aiagent_workspace
 
 Windows 11 で Codex / Claude Code を企業利用するための、**標準ガードレール・インストーラーの公開テンプレート**です。
 
@@ -17,7 +17,7 @@ AI エージェントは便利な反面、未承認パッケージの導入・�
 3. UAC 画面で「はい」を選択する
 4. GUI ウィザードでインストール先を確認し「インストール実行」をクリックする（Node.js・Python・Claude Code・Codex が未導入の場合は自動導入するか選択できる）
 
-デフォルトのインストール先: `C:\Users\<ユーザー名>\AIAgent\`
+デフォルトのインストール先: `C:\Users\<ユーザー名>\AIAgent_Workspace\`
 
 **上級者・自動化向け（コマンドライン）**
 
@@ -65,7 +65,7 @@ ai-pip install example-malicious-package # 禁止     → ブロック
 |---|---|
 | 守るべきルール・活用度レベル | [docs/user/利用ルールブック.md](docs/user/利用ルールブック.md) |
 | 導入手順の詳細・トラブル対応 | [docs/user/導入手順書.md](docs/user/導入手順書.md) |
-| コード管理・Bitbucket 保存 | [docs/user/コード管理ルール.md](docs/user/コード管理ルール.md) |
+| コード管理・組織指定のGit基盤 保存 | [docs/user/コード管理ルール.md](docs/user/コード管理ルール.md) |
 
 **環境を管理する方（管理者）**
 
@@ -90,3 +90,13 @@ python .\guardrails\hooks\validate_allowlist.py .\guardrails\config\package_allo
 ```
 
 ディレクトリ構成は `installer/`（導入）・`guardrails/`（ガードレール本体）・`docs/`（設計・運用文書）・`tests/` の4つに分かれています。各ファイルの役割は上表のリンク先を参照してください。
+
+## 利用方針（Level 1）
+
+本テンプレートの初期対象は、ローカル・個人利用・事務効率化を中心とする Level 1 です。目的は利用を一律に止めることではなく、作成物を見える場所に残してブラックボックス化を避け、危険な操作を検知可能にすることです。
+
+- コード、スクリプト、README、手順、設定、必要なログは、管理された共有ワークスペース配下に保存します。Box、OneDrive、SharePoint、Google Drive、組織指定の共有フォルダ等を利用でき、現在の利用想定ではBoxを例示します。
+- bypass、auto approval、危険な自動承認モードは使用しません。承認時は対象ファイル、コマンド、外部送信先、影響範囲を確認します。
+- Secret読取、認証情報の外部送信、破壊的コマンドはブロック対象です。未知パッケージと軽微な外部取得は、初期方針では警告・記録・利用者確認を中心に扱います。
+- AGENTS.md / CLAUDE.md、Hook、policy、利用者確認、運用レビューを組み合わせます。これらのテンプレート単体で全リスクを完全に防ぐものではなく、CodexではClaude Codeと同等のHook強制はできません。
+- Docker、Dev Container等の強い隔離環境は、エンジニア向けの後日検討事項です。

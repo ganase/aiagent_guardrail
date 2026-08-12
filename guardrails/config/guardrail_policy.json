@@ -9,6 +9,10 @@
     "\\brd\\b.*\\/s\\b",
     "\\brmdir\\b.*\\/s\\b",
     "format\\s+[A-Z]:",
+    "\\bdiskpart\\b",
+    "\\bsudo\\b",
+    "\\btakeown\\b",
+    "\\bicacls\\b",
     "cipher\\s+/w",
     "reg\\s+(add|delete)",
     "netsh\\s+advfirewall",
@@ -26,7 +30,21 @@
     "\\bschtasks\\b.*\\/create\\b",
     "\\bbitsadmin\\b.*\\/transfer\\b"
   ],
-  "runtime_install_patterns": [
+  "bypass_command_patterns": [
+    "\\bbypass\\b",
+    "\\bauto[- ]?approval\\b",
+    "\\bapproval[_ -]?policy\\s*[=:]\\s*['\"]?(auto|never|bypass)",
+    "\\bdangerous[- ]?mode\\b",
+    "--dangerously-skip-permissions"
+  ],
+  "review_command_patterns": [
+    "\\b(curl|wget)\\b",
+    "\\b(Invoke-WebRequest|iwr|Invoke-RestMethod|irm)\\b",
+    "\\bStart-Process\\b",
+    "\\bStart-BitsTransfer\\b",
+    "\\bbitsadmin\\b",
+    "pip\\s+install\\b.*\\s--user\\b"
+  ],  "runtime_install_patterns": [
     "winget\\s+(install|upgrade|update)\\s+",
     "choco\\s+(install|upgrade|update)\\s+",
     "scoop\\s+(install|update)\\s+",
@@ -35,7 +53,8 @@
     "npm\\s+install\\s+.*\\s+-g\\b",
     "npm\\s+update\\s+-g\\b",
     "npm\\s+update\\s+.*\\s+-g\\b",
-    "pipx\\s+(install|upgrade|upgrade-all)\\b"
+    "pipx\\s+(install|upgrade|upgrade-all)\\b",
+    "pip\\s+install\\b.*\\s--break-system-packages\\b"
   ],
   "package_install_patterns": {
     "python": [
@@ -55,9 +74,9 @@
       "pnpm\\s+(add|install)\\b"
     ]
   },
-  "hook_call_limits": {
-    "warn": 50,
-    "block": 100,
+  "mutating_tool_call_limits": {
+    "warn": 100,
+    "block": 200,
     "window_minutes": 60
   },
   "blocked_paths": [
@@ -66,8 +85,17 @@
     "secrets/**",
     "*.pem",
     "*.key",
+    "*.pfx",
+    "*.p12",
     "id_rsa",
-    "id_ed25519"
+    "id_ed25519",
+    "credentials",
+    "credentials.json",
+    "*token*",
+    "*secret*",
+    "*password*",
+    "*connectionstring*",
+    "*private_key*"
   ],
   "messages": {
     "runtime_install": "プログラムランタイムやグローバルツールの導入は会社のソフトウェア導入許可リスト・指定手順に従ってください。AI Agentの提案だけで導入せず、AIガバナンスチームまたは管理者に相談してください。",

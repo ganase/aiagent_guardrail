@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## 未リリース
+
+### New Features（ローカライズの汎用化）
+
+- **認証設定の2モード化**: `installer\setup_wizard.ps1` の認証設定欄に、Claude Code / Codex それぞれ「Gateway形式で貼り付け」（組織指定の認証サービス 専用フォーマット、既存動作）と「APIを直接指定」（Anthropic / OpenAI 互換の APIキー・モデル名・Base URL[任意]を入力）のラジオボタンを追加。API方式はGateway方式のような任意コード実行・丸ごと上書きを行わず、既存設定への差分マージ（Claude: `settings.json` の `env` 内3キーのみ）またはマーカー管理された追記（Codex: `config.toml` 先頭に専用ブロックをprepend）で書き込む。
+- **共有ドライブマウントの指定可能化**: `installer\configure_box_mount.ps1`（新規）が `SETUP.bat` 実行時に一度だけ、共有フォルダのパスとドライブ文字を確認するダイアログを表示し、`installer\box_mount.local.cmd`（gitignore対象）に保存する。以後は同ファイルを `mount_box_drive.bat` / `register_box_startup.ps1` / `launch_ai_workspace.bat` が共通で読み込む。従来ハードコードされていた `<共有ワークスペース>` という社内固有フォルダ名は削除。「使用しない」を選択すれば共有ドライブ連携自体を無効化できる。
+- `installer\uninstall.bat`: 共有ドライブの `subst` 解除と `box_mount.local.cmd` の削除を追加。
+
+### Bug Fixes（実装 vs 設計文書の不整合）
+
+- **`expires_at` の実行時チェックを deny-list-only 方式に結線**: `is_expired()` は v0.2.1 で実装されていたが `evaluate_packages()` から一度も呼び出されておらず、期限切れの allow / review エントリも実際には allow のままだった（`docs/既知の限界.md` §8 が記述していた「ask へ降格」も、v0.2.0 で ask 判定自体が廃止された後は実態と食い違っていた）。期限切れは `deny(expired)` として明示的にブロックし、`package_decisions.csv` に記録するように修正。
+- `install_standard.ps1` の `Set-CodexWindowsSection` のバックアップファイル名を秒精度からミリ秒精度に変更（同一インストール内で新規追加の認証設定書き込みと連続してバックアップが走った場合の命名衝突を防止）。
+
+### Documentation
+
+- `docs/admin/既知の限界.md` §11: API方式の追加とモード切替時の残留設定リスクを追記。
+- `docs/user/導入手順書.md`: 共有ドライブの初回設定ダイアログ、認証設定2モードの説明に更新。
+
+### Tests
+
+- `tests/test_guardrail_check.py`: `test_expired_allow_package_is_denied` を deny 期待に修正（従来は allow のまま通過することを検証していた）。
+
+## v0.3.0 (2026-08-05)
+
+### New Features
+
+- **Box ドライブ自動マウント**: `SETUP.bat` 実行時に `subst` で Box 共有フォルダ（`<共有ワークスペース>`）を `I:` ドライブとしてマウントし、Windows スタートアップ（`shell:startup`）にも自動登録する（`installer\mount_box_drive.bat` / `installer\mount_box_drive_silent.vbs` / `installer\register_box_startup.ps1`、いずれも admin 不要・冪等）。
+- **Git for Windows の自動導入をGUIウィザードに統合**: Node.js/Python と同様のパターンで検出・`winget install --id Git.Git` 経由の自動導入・手動導入リンクを追加。従来この仕組みは存在しなかった。
+- **Claude Code / Codex 認証設定の貼り付け機能**: 組織指定の認証サービス の Set Up 画面で生成した内容を GUI ウィザードに貼り付けることで、`~/.claude/settings.json`（JSON抽出・検証のみ）と `~/.codex/config.toml`（生成スクリプトを実行）へ自動適用する。従来は別配布の zip パッケージ（Codex_Setup_Package / Claude_Code_Setup_Package）で個別に行っていた作業を統合。認証設定の貼り付けは必須（空欄では「インストール実行」がエラーになる）。
+- **Codex config.toml のマージ書き込み**: `install_standard.ps1 -ConfigureCodex` を「テンプレートで丸ごと上書き」から「`[windows]` セクションのみをマーカーコメント付きで追記・更新」する方式に変更。認証設定貼り付け（Codex）が書き込んだ他のセクションを保持したまま、ガードレールの sandbox 設定を必ず最後に適用する。
+
+### Documentation
+
+- `docs/user/導入手順書.md`: Box自動マウント・Git自動導入・認証設定貼り付け（必須）の手順を追記。
+- `docs/admin/既知の限界.md`: 認証設定貼り付けにおける一時ファイルの平文残留リスク、Codex側の任意コード実行の信頼モデルを追記。
+- `docs/admin/SETUP統合設計_Box連携・認証設定貼り付け_案.md`: 本リリースの設計文書（実装済み）。
+
 ## v0.2.2 (2026-07-06)
 
 ### New Features
@@ -20,7 +57,7 @@
 
 ### Security / Compliance
 
-- **社内URL・組織名の除去**: `docs/運用設計書.md`・`docs/導入手順書.md`・`docs/コード管理ルール.md`・`docs/利用ルールブック.md` に残っていた実在の社内Gitリポジトリドメインと固有チーム名を汎用表現に置換。README.md が謳う「公開用テンプレートには社名・社内URLを含めない」方針との矛盾を解消。
+- **社内URL・組織名の除去**: `docs/運用設計書.md`・`docs/導入手順書.md`・`docs/コード管理ルール.md`・`docs/利用ルールブック.md` に残っていた実在の組織指定のGitリポジトリドメインと固有チーム名を汎用表現に置換。README.md が謳う「公開用テンプレートには社名・社内URLを含めない」方針との矛盾を解消。
 
 ### Bug Fixes（実装 vs 設計文書の不整合）
 

@@ -136,33 +136,23 @@ if (Test-Path $codexConfigPath) {
 }
 
 Write-Host ""
-Write-Host "--- Hook call rate counter (直近60分) ---"
-$hookRateFile = Join-Path $env:TEMP "aiagent_guardrail\hook_rate_$env:USERNAME.json"
-if (Test-Path $hookRateFile) {
-    try {
-        $rawTs = Get-Content $hookRateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        $windowSecs = 3600
-        $recentCount = 0
-        foreach ($ts in $rawTs) {
-            if (($nowEpoch - $ts) -lt $windowSecs) { $recentCount++ }
-        }
-        $rateColor = if ($recentCount -ge 100) { "Red" } elseif ($recentCount -ge 50) { "Yellow" } else { "Green" }
-        Write-Host "Hook呼び出し回数（直近60分）: $recentCount 回" -ForegroundColor $rateColor
-        if ($recentCount -ge 100) {
-            Write-Host "WARN ブロック閾値（100回）超過中。AIループの可能性を確認してください。" -ForegroundColor Red
-            $allOk = $false
-        } elseif ($recentCount -ge 50) {
-            Write-Host "WARN 警告閾値（50回）超過中。長時間の自律実行が継続しています。" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "INFO Hook rate file の読み取りに失敗しました: $_"
-    }
+Write-Host "--- File-mutation rate counters (直近60分) ---"
+$rateFiles = @(Get-ChildItem -Path (Join-Path $env:TEMP "aiagent_guardrail") -Filter "mutation_rate_*.json" -File -ErrorAction SilentlyContinue)
+if ($rateFiles.Count -eq 0) {
+    Write-Host "INFO rate file なし（直近60分のファイル変更なし、または初回）"
 } else {
-    Write-Host "INFO rate file なし（直近60分のHook呼び出しなし、または初回）"
+    $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    foreach ($rateFile in $rateFiles) {
+        try {
+            $timestamps = @(Get-Content $rateFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json)
+            $recentCount = @($timestamps | Where-Object { ($nowEpoch - $_) -lt 3600 }).Count
+            $rateColor = if ($recentCount -ge 200) { "Red" } elseif ($recentCount -ge 100) { "Yellow" } else { "Green" }
+            Write-Host "ファイル変更回数（セッション別・直近60分）: $recentCount 回" -ForegroundColor $rateColor
+            if ($recentCount -ge 200) { Write-Host "WARN 停止閾値（200回）超過中。このセッションのファイル変更は停止されます。" -ForegroundColor Red; $allOk = $false }
+            elseif ($recentCount -ge 100) { Write-Host "WARN 警告閾値（100回）超過中。" -ForegroundColor Yellow }
+        } catch { Write-Host "INFO rate file の読み取りに失敗しました: $_" }
+    }
 }
-
-Write-Host ""
 Write-Host "--- Claude Code session cost report (直近7日) ---"
 $claudeProjects = Join-Path $env:USERPROFILE ".claude\projects"
 if (Test-Path $claudeProjects) {

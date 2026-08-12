@@ -13,6 +13,10 @@ logs/
 installed_hashes.csv
 *.bak.*
 
+# Per-machine shared-drive mount configuration (installer/configure_box_mount.ps1)
+installer/box_mount.local.cmd
+config/box_mount.local.cmd
+
 # Python
 __pycache__/
 *.py[cod]

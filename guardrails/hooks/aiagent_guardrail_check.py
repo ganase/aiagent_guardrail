@@ -7,7 +7,7 @@ Design:
     never from AIAGENT_GUARDRAIL_HOME (user-writable).
   - deny-list-only policy: deny (exit 2) / allow (exit 0 + JSON).
   - Hook call rate limiter: rolling-window counter in %TEMP% for R9/R14 detection.
-  - Multi-event routing: PreToolUse(Bash/Read/Edit/Write), UserPromptSubmit, PostToolUse.
+  - Multi-event routing: PreToolUse(Bash/Edit/Write), UserPromptSubmit, PostToolUse.
   - Credential detection: blocks prompts containing known token/key patterns.
 """
 from __future__ import annotations
@@ -35,11 +35,6 @@ if hasattr(sys.stdout, "reconfigure"):
 else:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", line_buffering=True)
-# Reconfigure stdin to utf-8-sig so PowerShell BOM (EF BB BF) is stripped before json.loads.
-# Guarded because pytest replaces sys.stdin with DontReadFromInput (no reconfigure method).
-if hasattr(sys.stdin, "reconfigure"):
-    sys.stdin.reconfigure(encoding="utf-8-sig")
-
 # Trust anchor: always derived from this file's location
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _GUARDRAILS_DIR = _SCRIPT_DIR.parent
@@ -60,7 +55,7 @@ def _get_config_dir(mode: str) -> Path:
 # ── JSON loading ───────────────────────────────────────────────────────────────
 
 def load_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 # ── Levenshtein distance (stdlib only, for typosquat detection) ────────────────
@@ -81,8 +76,8 @@ def levenshtein(a: str, b: str) -> int:
 
 # ── Tamper detection ───────────────────────────────────────────────────────────
 
-def verify_hashes(config_dir: Path) -> str | None:
-    """Return error string on hash mismatch, None if ok. Missing file = ok (dev env).
+def verify_hashes(config_dir: Path, require_hash_file: bool = False) -> str | None:
+    """Return an integrity error; a missing/unreadable manifest is an error when required."
 
     Covers not only the policy/allowlist config files but also the hook script
     itself, its cmd wrapper, and the agent templates, so that tampering with the
@@ -91,7 +86,7 @@ def verify_hashes(config_dir: Path) -> str | None:
     """
     hash_file = config_dir / "installed_hashes.csv"
     if not hash_file.exists():
-        return None
+        return "installed_hashes.csv がありません。正式インストールを再実行してください。" if require_hash_file else None
 
     guardrails_dir = config_dir.parent
     targets = {
@@ -114,8 +109,8 @@ def verify_hashes(config_dir: Path) -> str | None:
                     # Strip quotes from path key (installer wraps with "")
                     key = row[0].strip().strip("\"'").replace("/", "\\")
                     stored[key] = row[1].strip()
-    except Exception:
-        return None  # Unreadable hash file: proceed with warning (not fatal)
+    except Exception as e:
+        return f"installed_hashes.csv を読めません: {type(e).__name__}" if require_hash_file else None
 
     for rel, file_path in targets.items():
         if not file_path.exists():
@@ -150,10 +145,36 @@ def _hook_json(decision: str, reason: str) -> str:
 
 # ── Decision actions ───────────────────────────────────────────────────────────
 
+def log_guardrail_event(logs_dir: Path, severity: str, category: str, command: str, reason: str) -> None:
+    """Append metadata-only command decisions for local review."""
+    try:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        event = {
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "severity": severity,
+            "category": category,
+            "command": command[:500],
+            "reason": reason[:500],
+        }
+        with (logs_dir / "guardrail_events.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def action_deny(message: str, mode: str) -> int:
     """Block: stderr message + exit 2 (claude-hook) or exit 1 (cli)."""
     print(message, file=sys.stderr)
     return 2 if mode == "claude-hook" else 1
+
+
+def action_review(message: str, mode: str) -> int:
+    """Require human confirmation in hook mode; CLI reports review without execution."""
+    if mode == "claude-hook":
+        print(_hook_json("ask", message))
+        return 0
+    print(f"REVIEW: {message}")
+    return 0
 
 
 def action_allow(message: str, mode: str) -> int:
@@ -165,85 +186,34 @@ def action_allow(message: str, mode: str) -> int:
     return 0
 
 
-def action_ask(message: str, mode: str) -> int:
-    """
-    Escalate to human.
-    claude-hook: exit 0 + JSON permissionDecision=ask.
-    cli: interactive [y/N]. Non-TTY stdin = deny.
-    """
-    if mode == "claude-hook":
-        print(_hook_json("ask", message))
-        return 0
-    if not sys.stdin.isatty():
-        print(f"DENY (非対話環境のため自動拒否): {message}", file=sys.stderr)
-        return 1
-    print(f"\n[ガードレール] 確認が必要なコマンドを検知しました。\n{message}")
-    try:
-        ans = input("続行しますか？ [y/N]: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        return 1
-    if ans == "y":
-        return 0
-    print("導入を中止しました。AIガバナンスチームまたは管理者に相談してください。", file=sys.stderr)
-    return 1
+ # ── File-mutation rate limiter (R9/R14) ─────────────────────────────────────
 
-
-# ── Hook call rate limiter (R9: コスト膨張 / R14: 無限ループ検知) ─────────────────
-
-def check_hook_call_rate(
-    policy: dict[str, Any],
-    user: str,
-    *,
-    _base_dir: Path | None = None,
-) -> str | None:
-    """
-    Tracks hook invocation frequency using a rolling time window stored in %TEMP%.
-    Returns a block message string if the hard threshold is exceeded.
-    Returns None and emits a stderr warning if the soft threshold is exceeded.
-    Returns None silently if within limits or on any I/O error (fail-open).
-
-    _base_dir: override temp base directory (for testing only).
-    """
-    limits = policy.get("hook_call_limits", {})
-    if not limits:
+def check_mutating_tool_rate(policy: dict[str, Any], session_id: str, *, _base_dir: Path | None = None) -> str | None:
+    """Rate-limit only file-mutating tools, independently for each Claude session."""
+    limits = policy.get("mutating_tool_call_limits", {})
+    if not limits or not session_id:
         return None
-
-    warn_threshold = int(limits.get("warn", 50))
-    block_threshold = int(limits.get("block", 100))
+    warn_threshold = int(limits.get("warn", 100))
+    block_threshold = int(limits.get("block", 200))
     window_minutes = int(limits.get("window_minutes", 60))
-    window_secs = window_minutes * 60
-
     try:
         base = _base_dir if _base_dir is not None else Path(tempfile.gettempdir())
         rate_dir = base / "aiagent_guardrail"
         rate_dir.mkdir(parents=True, exist_ok=True)
-        rate_file = rate_dir / f"hook_rate_{user}.json"
-
+        rate_file = rate_dir / ("mutation_rate_" + hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".json")
         now = time.time()
-        timestamps: list[float] = (
-            json.loads(rate_file.read_text(encoding="utf-8")) if rate_file.exists() else []
-        )
-        timestamps = [t for t in timestamps if now - t < window_secs]
+        timestamps = json.loads(rate_file.read_text(encoding="utf-8")) if rate_file.exists() else []
+        timestamps = [t for t in timestamps if now - t < window_minutes * 60]
         timestamps.append(now)
         rate_file.write_text(json.dumps(timestamps), encoding="utf-8")
-        count = len(timestamps)
     except Exception:
-        return None  # fail-open: never block due to counter I/O errors
-
+        return None
+    count = len(timestamps)
     if count >= block_threshold:
-        return (
-            f"[コスト制御] 直近{window_minutes}分のHook呼び出しが{count}回に達しました"
-            f"（ブロック閾値: {block_threshold}回）。\n"
-            f"AIの自律的なループ実行が疑われます。セッションを一度終了し、状況を確認してください。"
-        )
+        return f"[変更回数制御] このセッションの直近{window_minutes}分のファイル変更が{count}回に達しました（停止閾値: {block_threshold}回）。"
     if count >= warn_threshold:
-        print(
-            f"[コスト警告] 直近{window_minutes}分のHook呼び出し: {count}回"
-            f"（警告閾値: {warn_threshold}回）。長時間の自律実行が継続しています。",
-            file=sys.stderr,
-        )
+        print(f"[変更回数警告] このセッションの直近{window_minutes}分のファイル変更: {count}回（警告閾値: {warn_threshold}回）。", file=sys.stderr)
     return None
-
 
 # ── Credential detection (UserPromptSubmit / PostToolUse / PreToolUse file) ────
 # Patterns are intentionally specific to minimise false positives.
@@ -277,9 +247,11 @@ def check_file_access(
     mode: str = "cli",
     config_dir: Path | None = None,
 ) -> int:
-    """Block Read/Edit/Write tool access to credential files via _is_blocked_path."""
+    """Block Edit/Write tool access to credential files via _is_blocked_path."""
     resolved = config_dir if config_dir is not None else _get_config_dir(mode)
     try:
+        # A missing manifest is normal while running directly from a source tree.
+        # When a manifest is present, however, every protected file is verified.
         err = verify_hashes(resolved)
         if err:
             return action_deny(f"[改ざん検知] {err}", mode)
@@ -293,10 +265,10 @@ def check_file_access(
         return action_allow(f"{tool_name} アクセスを許可しました: {file_path}", mode)
     except Exception as e:
         print(
-            f"ガードレール内部エラーのため安全側で停止しました: {type(e).__name__}: {e}",
+            f"ガードレール内部エラーのため {tool_name} を警告して許可します: {type(e).__name__}: {e}",
             file=sys.stderr,
         )
-        return 2 if mode == "claude-hook" else 1
+        return action_allow(f"{tool_name} のガードレール検査に失敗したため警告して許可しました", mode) if mode == "claude-hook" else 1
 
 
 # ── UserPromptSubmit handler ───────────────────────────────────────────────────
@@ -322,6 +294,7 @@ def check_tool_output(tool_name: str, output_text: str, mode: str = "cli") -> in
     """Warn on PostToolUse events containing credential patterns. Does not block (action already done)."""
     found = detect_credentials(output_text)
     if found:
+        log_credential_alert(mode, tool_name, found)
         types = "、".join(found)
         print(
             f"[クレデンシャル警告] ツール出力に機密情報が含まれている可能性があります: {types}\n"
@@ -332,9 +305,21 @@ def check_tool_output(tool_name: str, output_text: str, mode: str = "cli") -> in
     return 0
 
 
+def log_credential_alert(mode: str, tool_name: str, found: list[str]) -> None:
+    """Record metadata only; never write secret-bearing tool output to disk."""
+    try:
+        log_file = _get_config_dir(mode).parent / "logs" / "credential_alerts.csv"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, "a", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerow([datetime.datetime.now(datetime.timezone.utc).isoformat(), tool_name, "|".join(found)])
+    except Exception:
+        pass
+
+
 # ── Hook event router (stdin dispatcher) ──────────────────────────────────────
 
 _FILE_TOOLS = frozenset({"Read", "Edit", "Write", "MultiEdit", "NotebookEdit"})
+_MUTATING_FILE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 
 
 def dispatch_hook_event(raw: str, mode: str, config_dir: Path | None = None) -> int:
@@ -374,6 +359,11 @@ def dispatch_hook_event(raw: str, mode: str, config_dir: Path | None = None) -> 
 
     if tool_name in _FILE_TOOLS and isinstance(tool_input, dict):
         file_path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+        if tool_name in _MUTATING_FILE_TOOLS:
+            resolved = config_dir if config_dir is not None else _get_config_dir(mode)
+            rate_block = check_mutating_tool_rate(load_json(resolved / "guardrail_policy.json"), str(payload.get("session_id", "")))
+            if rate_block:
+                return action_deny(rate_block, mode)
         return check_file_access(file_path, tool_name, mode, config_dir)
 
     # Bash or unknown: extract command string and use existing logic
@@ -680,6 +670,15 @@ def _is_blocked_path(token: str) -> bool:
     return False
 
 
+def is_external_command(command: str) -> bool:
+    return bool(re.search(r"\b(curl|wget|Invoke-WebRequest|iwr|Invoke-RestMethod|irm|Start-Process|Start-BitsTransfer|bitsadmin)\b", command, re.IGNORECASE))
+
+
+def has_sensitive_external_value(command: str) -> bool:
+    if detect_credentials(command):
+        return True
+    return bool(re.search(r"(?i)(api[_-]?key|token|secret|password|connection[_-]?string|private[_-]?key)\s*[=:]\s*[^\s]+", command))
+
 def check_blocked_paths(command: str) -> bool:
     """Return True if command reads a sensitive path (Bash-level check only)."""
     tokens = tokenize(command)
@@ -757,6 +756,12 @@ def evaluate_packages(
                     + f"\necosystem={ecosystem}\npackage={pkg_name}\nreason={pkg_entry.get('reason')}"
                 )
                 log_decision(logs_dir, user, ecosystem, pkg_name, "deny", command)
+            elif is_expired(pkg_entry.get("expires_at")):
+                deny_reasons.append(
+                    f"審査期限切れ: '{pkg_name}' の許可リスト登録は expires_at={pkg_entry.get('expires_at')} で期限切れです。\n"
+                    f"AIガバナンスチームまたは管理者に再審査を依頼してください。"
+                )
+                log_decision(logs_dir, user, ecosystem, pkg_name, "deny(expired)", command)
             else:
                 # allow or review → allow (deny-list-only policy)
                 log_decision(logs_dir, user, ecosystem, pkg_name, "allow", command)
@@ -814,16 +819,19 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
         user = "unknown"
 
     # C. Tamper detection (both modes; mismatch = exit 2 claude-hook / exit 1 cli)
+    # Do not turn an uninstalled development checkout into a blocking hook.
+    # Formal installs create the manifest and are verified above.
     err = verify_hashes(config_dir)
     if err:
         return action_deny(f"[改ざん検知] {err}", mode)
 
-    # R9/R14: Hook call rate limiter
-    rate_block = check_hook_call_rate(policy, user)
-    if rate_block:
-        return action_deny(rate_block, mode)
+    # 1. Bypass / automatic approval modes are prohibited.
+    for pat in policy.get("bypass_command_patterns", []):
+        if re.search(pat, command, re.IGNORECASE):
+            log_guardrail_event(logs_dir, "block", "bypass", command, "Bypass or automatic approval mode is prohibited.")
+            return action_deny("[bypass] 承認回避・自動承認・危険モードは使用できません。", mode)
 
-    # 1. Dangerous command patterns (JSON-defined)
+    # 2. Dangerous command patterns (JSON-defined)
     for pat in policy.get("dangerous_command_patterns", []):
         if re.search(pat, command, re.IGNORECASE):
             return action_deny(
@@ -853,7 +861,12 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
             mode,
         )
 
-    # 4. Runtime install patterns (guardrail_policy.json regex + runtime_policy.json commands)
+    # 4. Sending recognisable credentials through an external command is prohibited.
+    if is_external_command(command) and has_sensitive_external_value(command):
+        log_guardrail_event(logs_dir, "block", "credential_exfiltration", command, "External command contains a credential-like value.")
+        return action_deny("[credential_exfiltration] 認証情報らしき値を含む外部送信はブロックしました。", mode)
+
+    # 5. Runtime install patterns (guardrail_policy.json regex + runtime_policy.json commands)
     all_runtime_patterns = policy.get("runtime_install_patterns", []) + runtime_patterns_from_policy(
         runtime_policy
     )
@@ -865,7 +878,13 @@ def _check_command_impl(command: str, mode: str, config_dir: Path) -> int:
                 mode,
             )
 
-    # 5. Package install patterns: 3-layer policy
+    # 6. External download / process launch and pip --user require a human review.
+    for pat in policy.get("review_command_patterns", []):
+        if re.search(pat, command, re.IGNORECASE):
+            log_guardrail_event(logs_dir, "warn", "external_command", command, "External command or user-scope package installation requires review.")
+            return action_review("[review] 外部取得・外部実行またはユーザー領域への導入です。対象、送信先、影響範囲を確認してください。", mode)
+
+    # 7. Package install patterns: 3-layer policy
     for ecosystem, patterns in policy.get("package_install_patterns", {}).items():
         if not any(re.search(p, command, re.IGNORECASE) for p in patterns):
             continue
@@ -919,21 +938,6 @@ def check_command(command: str, mode: str = "cli", config_dir: Path | None = Non
 
 # ── stdin extraction ───────────────────────────────────────────────────────────
 
-def extract_command_from_stdin() -> str:
-    raw = sys.stdin.read()  # stdin is reconfigured to utf-8-sig at startup; BOM stripped automatically
-    if not raw.strip():
-        return ""
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return raw
-    tool_input = payload.get("tool_input") or {}
-    for key in ("command", "cmd", "script"):
-        if isinstance(tool_input, dict) and isinstance(tool_input.get(key), str):
-            return tool_input[key]
-    return json.dumps(payload, ensure_ascii=False)
-
-
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -944,7 +948,7 @@ def main() -> int:
         args = parser.parse_args()
         if args.command is not None:
             return check_command(args.command, args.mode)
-        raw = sys.stdin.read()
+        raw = (sys.stdin.buffer.read().decode("utf-8") if hasattr(sys.stdin, "buffer") else sys.stdin.read()).replace(chr(0xFEFF), "")
         return dispatch_hook_event(raw, args.mode)
     except SystemExit:
         raise

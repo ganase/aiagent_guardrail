@@ -8,8 +8,14 @@ if (-not $InstallRoot) {
 }
 Write-Host "Uninstall target: $InstallRoot"
 if (Test-Path $InstallRoot) {
-  Remove-Item -Path $InstallRoot -Recurse -Force
-  Write-Host "Removed: $InstallRoot"
+  try {
+    Remove-Item -Path $InstallRoot -Recurse -Force
+    Write-Host "Removed: $InstallRoot"
+  } catch {
+    Write-Warning "削除に失敗しました: $_"
+    Write-Warning "ACL保護が残っている場合は、管理者権限で次を実行してから再試行してください: icacls `"$InstallRoot`" /reset /T /Q"
+    throw
+  }
 }
 [Environment]::SetEnvironmentVariable("AIAGENT_GUARDRAIL_HOME", $null, "User")
 Write-Host "User environment AIAGENT_GUARDRAIL_HOME removed."

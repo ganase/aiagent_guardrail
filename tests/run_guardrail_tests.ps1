@@ -183,7 +183,9 @@ Add-TestResult -Id "INST-02" -Category "インストール" -TestName "Checker �
 
 # A-03: Python 構文チェック
 if ($checkerExists -and $pyFound) {
-    $pyCheck = python -m py_compile $Checker 2>&1
+    # Installed hooks may be read/execute-only by design. Parse the source
+    # directly so the syntax check does not create __pycache__ files.
+    $pyCheck = python -c "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8-sig'))" $Checker 2>&1
     $pyOk    = ($LASTEXITCODE -eq 0)
     Add-TestResult -Id "INST-03" -Category "インストール" -TestName "Checker 構文チェック" `
         -Operation "python -m py_compile hooks\aiagent_guardrail_check.py" `
@@ -387,9 +389,9 @@ Invoke-HookTest -Id "CC-CRED-09" -Category "CC クレデンシャル" -TestName 
     -Payload (PostPay "Read" "def hello():`n    return 'world'")
 
 # PreToolUse ファイルツールでのクレデンシャル - ファイルパスブロック (CC-FILE 経由なので重複しない)
-Invoke-HookTest -Id "CC-CRED-10" -Category "CC クレデンシャル" -TestName "PreToolUse Read: secrets/ 配下ファイル (deny)" `
+Invoke-HookTest -Id "CC-CRED-10" -Category "CC クレデンシャル" -TestName "PreToolUse Edit: secrets/ 配下ファイル (deny)" `
     -Operation "Read ツールで secrets\api_keys.txt にアクセス" -Expected "exit2" `
-    -Payload (FilePay "Read" "C:\project\secrets\api_keys.txt")
+    -Payload (FilePay "Edit" "C:\project\secrets\api_keys.txt")
 
 # =============================================================================
 # E. Hook ディスパッチルーティング (CC-DISP)
@@ -454,14 +456,14 @@ if ($templateOk) {
         $requiredM  = @("Bash", "Read", "Edit", "Write")
         $missingM   = $requiredM | Where-Object { $matchers -notcontains $_ }
         $allM       = $missingM.Count -eq 0
-        Add-TestResult -Id "CC-CFG-02" -Category "CC 設定" -TestName "PreToolUse hooks: Bash/Read/Edit/Write カバー" `
+        Add-TestResult -Id "CC-CFG-02" -Category "CC 設定" -TestName "PreToolUse hooks: Bash/Edit/Write カバー" `
             -Operation "managed-settings の PreToolUse matchers を確認" `
-            -Expected "Bash, Read, Edit, Write の 4 hook が全て存在" `
+            -Expected "Bash, Edit, Write の 3 hook が全て存在" `
             -Status $(if($allM) { "PASS" } else { "FAIL" }) `
             -Actual "matchers: $($matchers -join ', ')" `
             -Notes $(if(-not $allM) { "missing: $($missingM -join ', ')" } else { "" })
     } catch {
-        Add-TestResult -Id "CC-CFG-02" -Category "CC 設定" -TestName "PreToolUse hooks: Bash/Read/Edit/Write カバー" `
+        Add-TestResult -Id "CC-CFG-02" -Category "CC 設定" -TestName "PreToolUse hooks: Bash/Edit/Write カバー" `
             -Operation "matchers 確認" -Expected "4 matchers" -Status "FAIL" -Actual $_.Exception.Message
     }
 }

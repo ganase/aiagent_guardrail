@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Agent ガードレール システム構成図 v0.2</title>
+<style>
+  :root{
+    color-scheme: light;
+    --page:            #f9f9f7;
+    --surface-1:       #fcfcfb;
+    --text-primary:    #0b0b0b;
+    --text-secondary:  #52514e;
+    --text-muted:      #898781;
+    --gridline:        #e1e0d9;
+    --baseline:        #c3c2b7;
+    --border:          rgba(11,11,11,0.10);
+
+    --series-1: #2a78d6; /* blue   - 標準化・配布 */
+    --series-2: #eb6834; /* orange - 実行環境/インストーラー */
+    --series-3: #1baf7a; /* aqua   - allow/通過 */
+    --series-4: #eda100; /* yellow - 警告/レビュー */
+    --series-7: #4a3aa7; /* violet - ログ/監査 */
+    --series-8: #e34948; /* red    - deny/ブロック */
+
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+
+    --seq-100: #cde2fb; --seq-450: #2a78d6; --seq-700: #0d366b;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body{
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .doc{ max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header.hero{
+    background: linear-gradient(135deg, var(--seq-700) 0%, var(--series-1) 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+  }
+  header.hero .eyebrow{
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    font-size: 12px;
+    opacity: .85;
+    font-weight: 600;
+  }
+  header.hero h1{
+    margin: 6px 0 8px;
+    font-size: 30px;
+    font-weight: 700;
+  }
+  header.hero p{
+    margin: 0;
+    max-width: 760px;
+    opacity: .92;
+    font-size: 15px;
+  }
+  header.hero .meta{
+    margin-top: 18px;
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    opacity: .85;
+  }
+
+  nav.toc{
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 22px;
+    margin-bottom: 32px;
+    display: flex;
+    gap: 8px 22px;
+    flex-wrap: wrap;
+    font-size: 13.5px;
+  }
+  nav.toc a{ color: var(--series-1); text-decoration: none; font-weight: 600; }
+  nav.toc a:hover{ text-decoration: underline; }
+  nav.toc .sep{ color: var(--baseline); }
+
+  section{ margin-bottom: 48px; }
+  h2.section-title{
+    font-size: 21px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--gridline);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  h2.section-title .num{
+    display:inline-flex; align-items:center; justify-content:center;
+    width: 26px; height:26px; border-radius: 50%;
+    background: var(--series-1); color:#fff; font-size:13px; font-weight:700;
+    flex: 0 0 auto;
+  }
+  h2.section-title small{
+    font-size: 13px; font-weight: 500; color: var(--text-muted);
+  }
+  h3{ font-size: 16px; margin: 26px 0 10px; }
+  p.lead{ color: var(--text-secondary); margin-top: 6px; max-width: 860px; }
+
+  .card{
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .grid-2{ display:grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .grid-3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px){ .grid-2, .grid-3{ grid-template-columns: 1fr; } }
+
+  /* ---- legend ---- */
+  .legend{
+    display:flex; flex-wrap:wrap; gap: 10px 20px;
+    font-size: 12.5px; color: var(--text-secondary);
+    margin: 14px 0 22px;
+    padding: 10px 14px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .legend .item{ display:flex; align-items:center; gap:6px; }
+  .swatch{ width:12px; height:12px; border-radius:3px; flex:0 0 auto; }
+
+  /* ---- svg diagram wrapper ---- */
+  .diagram-wrap{
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    overflow-x: auto;
+  }
+  .diagram-wrap svg{ display:block; margin: 0 auto; }
+  figcaption{
+    text-align:center; color: var(--text-muted); font-size: 12.5px; margin-top: 10px;
+  }
+
+  /* ---- decision chips ---- */
+  .chip{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 999px;
+    border: 1px solid transparent;
+  }
+  .chip::before{ content:""; width:7px; height:7px; border-radius:50%; }
+  .chip.allow{ background: rgba(12,163,12,0.10); color:#0a7a0a; }
+  .chip.allow::before{ background: var(--status-good); }
+  .chip.warn{ background: rgba(234,161,0,0.14); color:#8a6300; }
+  .chip.warn::before{ background: var(--status-warning); }
+  .chip.deny{ background: rgba(211,59,59,0.10); color:#b3201f; }
+  .chip.deny::before{ background: var(--status-critical); }
+
+  /* ---- workflow steps (vertical) ---- */
+  ol.workflow{
+    list-style:none; margin:0; padding:0; counter-reset: wf;
+    border-left: 2px solid var(--gridline);
+    margin-left: 14px;
+  }
+  ol.workflow > li{
+    counter-increment: wf;
+    position: relative;
+    padding: 2px 0 26px 30px;
+  }
+  ol.workflow > li::before{
+    content: counter(wf);
+    position: absolute; left: -15px; top: 0;
+    width: 28px; height:28px; border-radius:50%;
+    background: var(--series-1); color:#fff;
+    font-size:13px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  ol.workflow > li:last-child{ padding-bottom: 2px; }
+  ol.workflow .wf-title{ font-weight:700; font-size:14.5px; margin-bottom: 3px; }
+  ol.workflow .wf-body{ color: var(--text-secondary); font-size: 13.5px; }
+  ol.workflow .wf-body code{ font-size: 12.5px; }
+
+  /* ---- install steps table-ish cards ---- */
+  .steps{
+    display:grid; grid-template-columns: 44px 1fr; gap: 0 16px;
+  }
+  .steps .n{
+    grid-column: 1;
+    width: 32px; height:32px; border-radius:8px;
+    background: var(--series-2); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:14px;
+  }
+  .steps .body{ grid-column: 2; padding-bottom: 22px; border-bottom: 1px dashed var(--gridline); margin-bottom: 4px;}
+  .steps .step-row:last-child .body{ border-bottom:none; }
+  .step-row{ display:contents; }
+  .steps .body h4{ margin:2px 0 4px; font-size: 14.5px; }
+  .steps .body p{ margin: 0; color: var(--text-secondary); font-size: 13.5px; }
+  code{
+    background: #efeee9; border-radius: 4px; padding: 1px 6px;
+    font-family: "SF Mono", Consolas, monospace; font-size: 12.5px;
+  }
+  pre code{
+    background: none; padding: 0; border-radius: 0;
+  }
+
+  table.spec{
+    width:100%; border-collapse: collapse; font-size: 13.5px;
+  }
+  table.spec th, table.spec td{
+    text-align:left; padding: 9px 12px; border-bottom: 1px solid var(--gridline);
+    vertical-align: top;
+  }
+  table.spec th{
+    color: var(--text-secondary); font-weight:700; font-size:12.5px;
+    text-transform: uppercase; letter-spacing:.03em;
+  }
+  table.spec tr:last-child td{ border-bottom:none; }
+
+  .callout{
+    border-left: 4px solid var(--series-8);
+    background: rgba(227,73,72,0.06);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    color: var(--text-primary);
+  }
+  .callout.info{ border-left-color: var(--series-1); background: rgba(42,120,214,0.06); }
+  .callout strong{ display:block; margin-bottom:2px; }
+
+  footer{
+    margin-top: 60px; padding-top:18px; border-top:1px solid var(--gridline);
+    color: var(--text-muted); font-size:12.5px;
+  }
+
+  @media print{
+    body{ background:#fff; }
+    header.hero{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    nav.toc{ display:none; }
+    section{ page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <header class="hero">
+    <div class="eyebrow">AI Agent Guardrail — Standard Package</div>
+    <h1>ガードレール システム構成図</h1>
+    <p>Codex / Claude Code を安全に展開するための標準ガードレールが、どのように配布・導入され、AIエージェントの操作をどう止める／通すかを1枚で説明する資料です。システム構成、利用者の操作フロー、導入手順の3部構成。</p>
+    <div class="meta">
+      <span>対象バージョン: v0.2 系</span>
+      <span>対象読者: 導入担当者・利用者・AIガバナンスチーム</span>
+      <span>関連文書: docs/admin/ガードレール設計.md、docs/user/導入手順書.md</span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <a href="#arch">1. システム構成図</a><span class="sep">/</span>
+    <a href="#decision">2. 3層判定ロジック</a><span class="sep">/</span>
+    <a href="#workflow">3. 利用者ワークフロー</a><span class="sep">/</span>
+    <a href="#install">4. 導入手順</a><span class="sep">/</span>
+    <a href="#limits">5. 何を守り、何を守らないか</a>
+  </nav>
+
+  <!-- ============================================================ -->
+  <!-- 1. システム構成図 -->
+  <!-- ============================================================ -->
+  <section id="arch">
+    <h2 class="section-title"><span class="num">1</span>システム構成図<small>配布物・実行時の呼び出し関係</small></h2>
+    <p class="lead">標準インストーラーが1台のPCに配布するファイル一式と、Claude Code / Codex から実行時にそれらがどう呼ばれるかを示します。ガードレールの実体は「JSON設定＋1本のPythonスクリプト」で、Claude Code の Hook 機構から都度呼び出されます。</p>
+
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>配布・インストール</span>
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>設定ファイル（判断材料）</span>
+      <span class="item"><span class="swatch" style="background:var(--series-7)"></span>実行時Hook本体</span>
+      <span class="item"><span class="swatch" style="background:var(--series-3)"></span>ログ・監査</span>
+      <span class="item"><span class="swatch" style="background:var(--series-8)"></span>ブロック時の到達点</span>
+    </div>
+
+    <figure class="diagram-wrap">
+<svg viewBox="0 0 1140 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ガードレールのシステム構成図">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#898781"/>
+    </marker>
+    <marker id="arrowDeny" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#e34948"/>
+    </marker>
+    <marker id="arrowAllow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#1baf7a"/>
+    </marker>
+  </defs>
+
+  <!-- ===== Row 0: 配布元 ===== -->
+  <rect x="20" y="16" width="1100" height="70" rx="10" fill="#eb6834" opacity="0.10"/>
+  <text x="42" y="40" font-size="12" font-weight="700" fill="#b34d1f">標準インストーラー（SETUP.bat → install_standard.ps1）</text>
+  <text x="42" y="60" font-size="11.5" fill="#52514e">1台のPCに設定・Hook・テンプレートを配布。Hookを適用するのは Claude Code の managed-settings のみ（ACL保護は管理者導入時）</text>
+
+  <!-- ===== Row 1: 設定ファイル群 (guardrails/config) ===== -->
+  <g>
+    <rect x="20" y="106" width="1100" height="150" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+    <text x="40" y="128" font-size="12.5" font-weight="700" fill="#0b0b0b">guardrails/config/ — 判断材料（JSON）</text>
+
+    <!-- guardrail_policy.json -->
+    <rect x="40" y="142" width="245" height="96" rx="8" fill="#2a78d6" opacity="0.10" stroke="#2a78d6"/>
+    <text x="58" y="164" font-size="12" font-weight="700" fill="#184f95">guardrail_policy.json</text>
+    <text x="58" y="182" font-size="10.5" fill="#52514e">危険コマンド／ランタイム導入／</text>
+    <text x="58" y="196" font-size="10.5" fill="#52514e">パッケージ導入パターン／</text>
+    <text x="58" y="210" font-size="10.5" fill="#52514e">変更回数上限／blocked_paths</text>
+
+    <!-- package_allowlist.json -->
+    <rect x="302" y="142" width="245" height="96" rx="8" fill="#2a78d6" opacity="0.10" stroke="#2a78d6"/>
+    <text x="320" y="164" font-size="12" font-weight="700" fill="#184f95">package_allowlist.json</text>
+    <text x="320" y="182" font-size="10.5" fill="#52514e">allow / review / deny 台帳</text>
+    <text x="320" y="196" font-size="10.5" fill="#52514e">expires_at（審査期限）</text>
+    <text x="320" y="210" font-size="10.5" fill="#52514e">typosquat比較用の既知名一覧</text>
+
+    <!-- runtime_policy.json -->
+    <rect x="564" y="142" width="245" height="96" rx="8" fill="#2a78d6" opacity="0.10" stroke="#2a78d6"/>
+    <text x="582" y="164" font-size="12" font-weight="700" fill="#184f95">runtime_policy.json</text>
+    <text x="582" y="182" font-size="10.5" fill="#52514e">会社許可リスト facing の</text>
+    <text x="582" y="196" font-size="10.5" fill="#52514e">ランタイム導入コマンド一覧</text>
+    <text x="582" y="210" font-size="10.5" fill="#52514e">（policy.json のパターンとマージ）</text>
+
+    <!-- installed_hashes.csv -->
+    <rect x="826" y="142" width="274" height="96" rx="8" fill="#4a3aa7" opacity="0.10" stroke="#4a3aa7"/>
+    <text x="844" y="164" font-size="12" font-weight="700" fill="#332a75">installed_hashes.csv</text>
+    <text x="844" y="182" font-size="10.5" fill="#52514e">上記全設定＋Hook本体＋テンプレートの</text>
+    <text x="844" y="196" font-size="10.5" fill="#52514e">SHA256。改ざん検知の「正」</text>
+    <text x="844" y="210" font-size="10.5" fill="#52514e">（ACL保護は管理者導入時のみ）</text>
+  </g>
+
+  <!-- Arrows: config -> hook -->
+  <line x1="162" y1="256" x2="470" y2="330" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="424" y1="256" x2="500" y2="330" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="686" y1="256" x2="560" y2="330" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="963" y1="256" x2="620" y2="330" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- ===== Row 2: Hook本体 ===== -->
+  <rect x="330" y="336" width="480" height="110" rx="10" fill="#4a3aa7" opacity="0.12" stroke="#4a3aa7" stroke-width="1.4"/>
+  <text x="352" y="360" font-size="13" font-weight="700" fill="#332a75">guardrails/hooks/aiagent_guardrail_check.py</text>
+  <text x="352" y="380" font-size="11" fill="#52514e">run_guardrail_hook.cmd 経由で起動（fail-closed：Python不在／例外は即ブロック）</text>
+  <text x="352" y="398" font-size="11" fill="#52514e">改ざん検証 → 危険コマンド判定 → blocked_paths → ランタイム／パッケージ3層判定</text>
+  <text x="352" y="416" font-size="11" fill="#52514e">Credentialスキャン（Prompt/Edit/Write/PostToolUse） → 変更回数レート制限</text>
+  <text x="352" y="434" font-size="10.5" fill="#898781">stdin: hook JSON（tool_name / tool_input / session_id） → stdout/exit code で応答</text>
+
+  <!-- ===== Row 3: Claude Code triggers ===== -->
+  <rect x="20" y="486" width="230" height="150" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="40" y="508" font-size="12" font-weight="700" fill="#0b0b0b">Claude Code</text>
+  <text x="40" y="526" font-size="10.5" fill="#52514e">managed-settings.json</text>
+  <text x="40" y="546" font-size="10.8" fill="#0b0b0b">PreToolUse: Bash</text>
+  <text x="40" y="562" font-size="10.8" fill="#0b0b0b">PreToolUse: Read/Edit/Write</text>
+  <text x="40" y="578" font-size="10.8" fill="#0b0b0b">UserPromptSubmit</text>
+  <text x="40" y="594" font-size="10.8" fill="#0b0b0b">PostToolUse</text>
+  <text x="40" y="614" font-size="10" fill="#898781">deny/ask固定ルールは git push 等の</text>
+  <text x="40" y="628" font-size="10" fill="#898781">最小限のみ（パッケージ判定はHookに一元化）</text>
+
+  <rect x="270" y="486" width="230" height="150" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="290" y="508" font-size="12" font-weight="700" fill="#0b0b0b">Codex</text>
+  <text x="290" y="526" font-size="10.5" fill="#52514e">config.toml / AGENTS.md</text>
+  <text x="290" y="548" font-size="10.8" fill="#0b0b0b">Windows sandbox</text>
+  <text x="290" y="564" font-size="10.8" fill="#0b0b0b">approval_policy</text>
+  <text x="290" y="580" font-size="10.8" fill="#0b0b0b">ai-pip / ai-npm 経由で依存導入を検査</text>
+  <text x="290" y="602" font-size="10" fill="#c0392b" font-weight="700">Claude 相当のHook機構は存在しない</text>
+  <text x="290" y="616" font-size="10" fill="#898781">Sandbox・approval_policyで補完</text>
+  <text x="290" y="630" font-size="10" fill="#898781">素のpip/npmは直接検査されない</text>
+
+  <!-- Claude/Codex -> hook -->
+  <line x1="135" y1="486" x2="470" y2="446" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="385" y1="486" x2="530" y2="446" stroke="#898781" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="392" y="470" font-size="9.5" fill="#898781">ai-pip/ai-npm経由のみ</text>
+
+  <!-- decision output box -->
+  <rect x="530" y="486" width="290" height="150" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="550" y="508" font-size="12" font-weight="700" fill="#0b0b0b">3層判定（詳細は下図2）</text>
+  <g>
+    <rect x="550" y="522" width="72" height="24" rx="12" fill="#0ca30c" opacity="0.14"/>
+    <text x="586" y="538" font-size="10.5" font-weight="700" fill="#0a7a0a" text-anchor="middle">allow</text>
+  </g>
+  <g>
+    <rect x="632" y="522" width="72" height="24" rx="12" fill="#fab219" opacity="0.18"/>
+    <text x="668" y="538" font-size="10.5" font-weight="700" fill="#8a6300" text-anchor="middle">警告</text>
+  </g>
+  <g>
+    <rect x="714" y="522" width="72" height="24" rx="12" fill="#d03b3b" opacity="0.14"/>
+    <text x="750" y="538" font-size="10.5" font-weight="700" fill="#b3201f" text-anchor="middle">deny</text>
+  </g>
+  <text x="550" y="562" font-size="10.5" fill="#52514e">exit 0 + JSON permissionDecision</text>
+  <text x="550" y="578" font-size="10.5" fill="#52514e">（allow） / exit 2（deny・即停止）</text>
+  <text x="550" y="600" font-size="10.5" fill="#52514e">PostToolUseは警告のみ（ブロックしない）</text>
+  <text x="550" y="616" font-size="10.5" fill="#52514e">— 操作は既に完了しているため</text>
+
+  <!-- hook -> decision -->
+  <line x1="600" y1="446" x2="640" y2="486" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- decision -> user (allow) -->
+  <path d="M 786 546 C 900 546, 940 490, 940 446" fill="none" stroke="#1baf7a" stroke-width="1.6" marker-end="url(#arrowAllow)"/>
+  <text x="905" y="480" font-size="9.5" fill="#0a7a0a">許可 → 実行続行</text>
+
+  <!-- decision -> deny endpoint -->
+  <rect x="850" y="486" width="230" height="76" rx="10" fill="#e34948" opacity="0.10" stroke="#e34948"/>
+  <text x="868" y="508" font-size="11.5" font-weight="700" fill="#b3201f">利用者・AIへ拒否理由を表示</text>
+  <text x="868" y="524" font-size="10.5" fill="#52514e">stderr: 拒否理由 + 相談先案内</text>
+  <text x="868" y="540" font-size="10.5" fill="#52514e">個人判断で回避せず管理者へ相談</text>
+  <text x="868" y="554" font-size="10.5" fill="#52514e">（既知の限界.md 前提）</text>
+  <line x1="820" y1="560" x2="850" y2="524" stroke="#e34948" stroke-width="1.6" marker-end="url(#arrowDeny)"/>
+
+  <!-- ===== Row 4: Logs ===== -->
+  <rect x="20" y="666" width="1100" height="76" rx="10" fill="#1baf7a" opacity="0.08" stroke="#1baf7a"/>
+  <text x="40" y="690" font-size="12" font-weight="700" fill="#0f7a52">guardrails/logs/ — 全判定をベストエフォートで記録（判定結果には影響しない）</text>
+  <text x="40" y="710" font-size="10.8" fill="#52514e">package_decisions.csv（allow/deny/typosquat/expired内訳）　install_log.csv（導入状況・ACL保護有無）　credential_alerts.csv（時刻・ツール名・種別のみ、値は非記録）</text>
+
+  <line x1="600" y1="446" x2="90" y2="666" stroke="#898781" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrow)" opacity="0.6"/>
+  <line x1="600" y1="636" x2="600" y2="666" stroke="#898781" stroke-width="1" stroke-dasharray="3,3" marker-end="url(#arrow)" opacity="0.6"/>
+</svg>
+    </figure>
+    <figcaption>Claude Code は managed-settings 経由でHookを起動し、JSON設定を参照して判定します。Codexには同等のHookはなく、ai-pip/ai-npm経由の依存導入チェックとWindows Sandbox・approval_policyで補完します（素のpip/npmは直接検査されません）。</figcaption>
+
+    <div class="callout info" style="margin-top:18px;">
+      <strong>読み方のポイント</strong>
+      Hookの実体は<strong>1本のPythonスクリプト</strong>（<code>aiagent_guardrail_check.py</code>）で、Claude Code の managed-settings から起動します。危険コマンド・ランタイム導入・パッケージ導入・機密ファイル読取・Credential検知・変更回数制限をこの1本が担い、判断材料はJSON設定として外部化されています。Codexには同等のHookはないため、Windows Sandbox、<code>approval_policy</code>、<code>ai-pip</code>/<code>ai-npm</code>経由の依存導入チェックで補完します。素の<code>pip</code>/<code>npm</code>は直接検査されません。
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 2. 3層判定ロジック -->
+  <!-- ============================================================ -->
+  <section id="decision">
+    <h2 class="section-title"><span class="num">2</span>3層判定ロジック<small>deny-list-only 方式</small></h2>
+    <p class="lead">パッケージ導入（pip / npm 等）の判定は「denyリストに載っているものだけブロックし、未知は通す」方式です。allowlist の維持コストを抑えつつ、既知悪性パッケージと類似名（typosquat）を確実に止めます。</p>
+
+    <div class="diagram-wrap">
+<svg viewBox="0 0 1100 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="3層判定フロー">
+  <defs>
+    <marker id="arrow2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#898781"/>
+    </marker>
+  </defs>
+
+  <!-- input -->
+  <rect x="10" y="110" width="150" height="80" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="30" y="140" font-size="12" font-weight="700" fill="#0b0b0b">pip / npm install</text>
+  <text x="30" y="158" font-size="10.5" fill="#52514e">コマンド or</text>
+  <text x="30" y="172" font-size="10.5" fill="#52514e">requirements.txt</text>
+
+  <line x1="160" y1="150" x2="205" y2="150" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow2)"/>
+
+  <!-- gate 1: custom index -->
+  <rect x="210" y="30" width="170" height="70" rx="10" fill="#e34948" opacity="0.10" stroke="#e34948"/>
+  <text x="228" y="55" font-size="11.5" font-weight="700" fill="#b3201f">① 外部レジストリ指定</text>
+  <text x="228" y="72" font-size="10" fill="#52514e">--index-url 等</text>
+  <text x="228" y="86" font-size="10" fill="#52514e">→ 即 deny</text>
+  <line x1="285" y1="110" x2="285" y2="100" stroke="#e34948" stroke-width="1.2"/>
+
+  <!-- gate 2: name lookup -->
+  <rect x="210" y="115" width="170" height="70" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="228" y="140" font-size="11.5" font-weight="700" fill="#0b0b0b">② allowlist照合</text>
+  <text x="228" y="157" font-size="10" fill="#52514e">パッケージ名を正規化し</text>
+  <text x="228" y="171" font-size="10" fill="#52514e">台帳を検索</text>
+
+  <line x1="380" y1="150" x2="425" y2="150" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow2)"/>
+
+  <!-- branch: found -->
+  <rect x="430" y="30" width="200" height="90" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="450" y="52" font-size="11.5" font-weight="700" fill="#0b0b0b">台帳に登録あり</text>
+  <text x="450" y="70" font-size="10.5" fill="#52514e">status = deny → deny</text>
+  <text x="450" y="86" font-size="10.5" fill="#52514e">expires_at 過去日付</text>
+  <text x="450" y="100" font-size="10.5" fill="#52514e">→ deny(expired)</text>
+  <text x="450" y="114" font-size="10.5" fill="#0a7a0a" font-weight="700">それ以外 → allow</text>
+
+  <!-- branch: not found -->
+  <rect x="430" y="140" width="200" height="140" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="450" y="162" font-size="11.5" font-weight="700" fill="#0b0b0b">台帳に登録なし（未知）</text>
+  <text x="450" y="182" font-size="10.5" fill="#52514e">Levenshtein距離1〜2で</text>
+  <text x="450" y="196" font-size="10.5" fill="#52514e">既知名(allow/review)と比較</text>
+  <text x="450" y="216" font-size="10.5" fill="#b3201f" font-weight="700">類似あり → deny(typosquat)</text>
+  <text x="450" y="236" font-size="10.5" fill="#0a7a0a" font-weight="700">類似なし → allow(unknown)</text>
+  <text x="450" y="256" font-size="10" fill="#898781">※未知パッケージそのものは</text>
+  <text x="450" y="270" font-size="10" fill="#898781">止める設計ではない（限界5）</text>
+
+  <line x1="285" y1="185" x2="285" y2="210" stroke="#898781" stroke-width="1.2"/>
+  <line x1="210" y1="210" x2="380" y2="210" stroke="#898781" stroke-width="1.2"/>
+
+  <line x1="380" y1="150" x2="425" y2="75" stroke="#898781" stroke-width="1.2" marker-end="url(#arrow2)"/>
+  <line x1="380" y1="150" x2="425" y2="210" stroke="#898781" stroke-width="1.2" marker-end="url(#arrow2)"/>
+
+  <!-- outputs -->
+  <line x1="630" y1="65" x2="700" y2="65" stroke="#0ca30c" stroke-width="1.4" marker-end="url(#arrow2)"/>
+  <line x1="630" y1="105" x2="700" y2="150" stroke="#d03b3b" stroke-width="1.4" marker-end="url(#arrow2)"/>
+  <line x1="630" y1="215" x2="700" y2="200" stroke="#d03b3b" stroke-width="1.4" marker-end="url(#arrow2)"/>
+  <line x1="630" y1="250" x2="700" y2="65" stroke="#0ca30c" stroke-width="1.4" marker-end="url(#arrow2)"/>
+
+  <rect x="705" y="30" width="180" height="70" rx="10" fill="#0ca30c" opacity="0.10" stroke="#0ca30c"/>
+  <text x="723" y="58" font-size="12.5" font-weight="700" fill="#0a7a0a">allow</text>
+  <text x="723" y="76" font-size="10" fill="#52514e">無音で自動許可。</text>
+  <text x="723" y="90" font-size="10" fill="#52514e">package_decisions.csvに記録</text>
+
+  <rect x="705" y="130" width="180" height="90" rx="10" fill="#d03b3b" opacity="0.10" stroke="#d03b3b"/>
+  <text x="723" y="158" font-size="12.5" font-weight="700" fill="#b3201f">deny</text>
+  <text x="723" y="176" font-size="10" fill="#52514e">exit 2。理由と相談先を</text>
+  <text x="723" y="190" font-size="10" fill="#52514e">stderrに表示して即停止</text>
+  <text x="723" y="206" font-size="10" fill="#52514e">（deny / typosquat / expired）</text>
+
+  <!-- footer note -->
+  <rect x="920" y="30" width="160" height="230" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
+  <text x="936" y="54" font-size="11.5" font-weight="700" fill="#0b0b0b">定期レビュー</text>
+  <text x="936" y="76" font-size="10" fill="#52514e">allow(unknown)が</text>
+  <text x="936" y="90" font-size="10" fill="#52514e">繰り返し記録される</text>
+  <text x="936" y="104" font-size="10" fill="#52514e">パッケージを</text>
+  <text x="936" y="118" font-size="10" fill="#52514e">ガバナンスチームが</text>
+  <text x="936" y="132" font-size="10" fill="#52514e">週次/月次で確認</text>
+  <text x="936" y="156" font-size="10" fill="#52514e">↓</text>
+  <text x="936" y="176" font-size="10" fill="#52514e">allowlist へ</text>
+  <text x="936" y="190" font-size="10" fill="#52514e">allow/review/deny</text>
+  <text x="936" y="204" font-size="10" fill="#52514e">として反映</text>
+  <text x="936" y="228" font-size="10" fill="#52514e">↓ 標準モジュール更新</text>
+  <text x="936" y="242" font-size="10" fill="#52514e">で全端末に配布</text>
+  <line x1="885" y1="150" x2="918" y2="150" stroke="#898781" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow2)"/>
+</svg>
+    </div>
+
+    <table class="spec" style="margin-top:18px;">
+      <thead><tr><th>decision値</th><th>意味</th><th>結果</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip allow">allow</span></td><td>allowlist上で status=allow / review、または未知で類似名なし</td><td>無音で通過。ログに記録</td></tr>
+        <tr><td><span class="chip deny">deny</span></td><td>allowlist上で status=deny</td><td>exit 2 でブロック、理由を表示</td></tr>
+        <tr><td><span class="chip deny">deny(typosquat)</span></td><td>既知名とのLevenshtein距離1〜2</td><td>exit 2 でブロック、類似名を提示</td></tr>
+        <tr><td><span class="chip deny">deny(expired)</span></td><td>expires_atが過去日付（審査期限切れ）</td><td>exit 2 でブロック、再審査を依頼</td></tr>
+        <tr><td><span class="chip warn">（PostToolUse警告）</span></td><td>ツール出力にCredential形式を検知</td><td>ブロックせず警告のみ（操作は完了済み）</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 3. 利用者ワークフロー -->
+  <!-- ============================================================ -->
+  <section id="workflow">
+    <h2 class="section-title"><span class="num">3</span>利用者ワークフロー<small>Claude Codeを使う人が実際に見る流れ</small></h2>
+    <p class="lead">利用者は自分でガードレールを操作しません。普段どおりClaude Code / Codexに指示するだけで、危険な操作の手前で自動的に介入されます。よくある3つの場面での見え方は次のとおりです。</p>
+
+    <div class="grid-3">
+      <div class="card">
+        <h3 style="margin-top:0;">A. 許可済みライブラリを入れる</h3>
+        <ol class="workflow">
+          <li>
+            <div class="wf-title">Claude Codeに「pandasを使って集計して」と依頼</div>
+            <div class="wf-body">Claude Codeが <code>pip install pandas</code> を提案</div>
+          </li>
+          <li>
+            <div class="wf-title">Hookが自動判定</div>
+            <div class="wf-body">allowlist に allow 登録があるため即許可。<span class="chip allow">allow</span></div>
+          </li>
+          <li>
+            <div class="wf-title">そのまま実行される</div>
+            <div class="wf-body">利用者には確認ダイアログが出ない（無音で通過）</div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">B. 未知・禁止パッケージを入れようとする</h3>
+        <ol class="workflow">
+          <li>
+            <div class="wf-title">Claude Codeが未知のパッケージ導入を提案</div>
+            <div class="wf-body">例: <code>pip install pandsa</code>（タイプミス）</div>
+          </li>
+          <li>
+            <div class="wf-title">typosquat検知でブロック</div>
+            <div class="wf-body">既知の <code>pandas</code> に類似 → <span class="chip deny">deny</span>。Claude の画面にエラーとして表示される</div>
+          </li>
+          <li>
+            <div class="wf-title">利用者が対応</div>
+            <div class="wf-body">正しいパッケージ名なら訂正して再依頼。判断に迷えばAIガバナンスチームへ相談（自己判断で回避しない）</div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">C. 機密ファイルを読ませようとする</h3>
+        <ol class="workflow">
+          <li>
+            <div class="wf-title">Claude Codeが .env の内容を読もうとする</div>
+            <div class="wf-body">例: デバッグのため <code>cat .env</code> を実行しようとする</div>
+          </li>
+          <li>
+            <div class="wf-title">blocked_pathsでブロック</div>
+            <div class="wf-body">機密ファイルパターンに一致 → <span class="chip deny">deny</span>。内容は一切表示されない</div>
+          </li>
+          <li>
+            <div class="wf-title">安全な代替を使う</div>
+            <div class="wf-body"><code>.env.example</code> 等のテンプレートファイルで代用するか、値を直接貼らずに管理者に相談する</div>
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:22px;">
+      <strong>利用者が気づかないうちに動いているもの</strong>
+      同一セッションでのファイル変更（Edit/Write）が60分間に100回を超えると警告、200回を超えると変更操作のみ停止します（Read・通常の会話は継続可能）。無限編集ループや暴走的な繰り返し処理に気づくためのセーフティネットで、Codexでは発動しません（Hook機構が無いため）。
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 4. 導入手順 -->
+  <!-- ============================================================ -->
+  <section id="install">
+    <h2 class="section-title"><span class="num">4</span>導入手順<small>SETUP.bat から動作確認まで</small></h2>
+    <p class="lead">管理者権限での導入が原則必須です（ACL保護・Claude Code managed-settings のシステム配置に必要）。非admin導入も技術的には可能ですが、評価・開発用途に限定してください。</p>
+
+    <div class="steps">
+      <div class="step-row">
+        <div class="n">1</div>
+        <div class="body">
+          <h4>ZIPを展開して SETUP.bat を実行</h4>
+          <p>GitHubからリポジトリをZIPで取得し、任意のフォルダに解凍。<code>SETUP.bat</code> をダブルクリックすると、共有ドライブの初回設定（Box等、使わない場合はスキップ可）→ 自動マウント → UAC確認 → GUIウィザード起動まで自動で進みます。</p>
+        </div>
+      </div>
+      <div class="step-row">
+        <div class="n">2</div>
+        <div class="body">
+          <h4>UACで管理者権限を許可</h4>
+          <p>「はい」を選択して管理者として再起動。拒否した場合は非admin導入となり、設定ファイル改変の保護（ACL）が適用されません。</p>
+        </div>
+      </div>
+      <div class="step-row">
+        <div class="n">3</div>
+        <div class="body">
+          <h4>ランタイム・AIツールの導入状況を確認</h4>
+          <p>GUIウィザードが Node.js / Git for Windows / Python / Claude Code / Codex の導入状況を検出。未導入分は <code>winget</code> 経由の自動導入を選択できます（<code>winget</code>が無い環境では手動導入が必要）。</p>
+        </div>
+      </div>
+      <div class="step-row">
+        <div class="n">4</div>
+        <div class="body">
+          <h4>認証設定を入力する（必須）</h4>
+          <p>Claude Code / Codex それぞれで「Gateway形式で貼り付け」（社内 AI Gateway の Set Up 画面で生成した内容）か「APIを直接指定」（Anthropic / OpenAI 互換のAPIキー・モデル名。Base URLは任意）を選択して入力。必須項目が空欄では「インストール実行」がエラーになります。この内容は他人と共有しないこと。</p>
+        </div>
+      </div>
+      <div class="step-row">
+        <div class="n">5</div>
+        <div class="body">
+          <h4>「インストール実行」をクリック</h4>
+          <p>下記が配布・適用されます：<code>guardrails/</code>（config・hooks・templates・bin）、Claude Code managed-settings.json、ACL保護（管理者導入時）、<code>installed_hashes.csv</code>（改ざん検知の基準）。</p>
+        </div>
+      </div>
+      <div class="step-row">
+        <div class="n">6</div>
+        <div class="body">
+          <h4>導入後の動作確認</h4>
+          <p><code>installer\check_status.ps1</code> を実行。allow/deny/危険コマンド/blocked_pathのスモークテスト、ハッシュ整合性、ACL保護状態、Codexの<code>approval_policy</code>設定、直近のファイル変更回数・トークン使用量まで一括確認できます。</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>コマンドラインでの導入（上級者・自動化向け）</h3>
+    <div class="card">
+      <p style="margin:0 0 10px;color:var(--text-secondary);font-size:13.5px;">管理者PowerShellでリポジトリのルートから実行します。</p>
+      <pre style="background:#0d0d0d;color:#e7e6e2;padding:14px 16px;border-radius:8px;font-size:12.8px;overflow-x:auto;margin:0;"><code>cd &lt;展開先&gt;
+.\installer\install_standard.ps1 -ConfigureClaude -ConfigureCodex
+
+# ai-pip / ai-npm をユーザーPATHに追加する場合
+.\installer\install_standard.ps1 -ConfigureClaude -ConfigureCodex -AddWrappersToUserPath
+
+# 導入後の確認
+.\installer\check_status.ps1</code></pre>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- 5. 限界 -->
+  <!-- ============================================================ -->
+  <section id="limits">
+    <h2 class="section-title"><span class="num">5</span>何を守り、何を守らないか</h2>
+    <p class="lead">本ガードレールは「完全なセキュリティ」ではなく「善意のAIエージェントに対する摩擦と監査ログの提供」です。詳細は <code>docs/admin/既知の限界.md</code> を正としてください。</p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;color:#0a7a0a;">守れるもの</h3>
+        <table class="spec">
+          <tbody>
+            <tr><td>Claude Code から提案された危険コマンド・再帰削除</td><td><span class="chip allow">対応</span></td></tr>
+            <tr><td>Claude Code から提案された禁止・類似名パッケージ導入</td><td><span class="chip allow">対応</span></td></tr>
+            <tr><td>Bash / Edit / Write 経由の既知の機密ファイルパターン読取</td><td><span class="chip allow">対応</span></td></tr>
+            <tr><td>プロンプト・ツール出力中の既知形式のAPIキー等</td><td><span class="chip allow">対応</span></td></tr>
+            <tr><td>設定ファイル・Hook本体・テンプレートの改ざん</td><td><span class="chip allow">対応（ACL保護時）</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;color:#b3201f;">守れないもの</h3>
+        <table class="spec">
+          <tbody>
+            <tr><td><code>python -c</code>やスクリプト経由での回避</td><td><span class="chip deny">未対応</span></td></tr>
+            <tr><td>Codexが素の pip/npm を直接実行する場合</td><td><span class="chip deny">未対応</span></td></tr>
+            <tr><td>利用者がターミナルで直接実行するコマンド</td><td><span class="chip deny">未対応</span></td></tr>
+            <tr><td>未知パッケージそのもの（deny-list-onlyの設計上）</td><td><span class="chip warn">部分対応</span></td></tr>
+            <tr><td>推移的依存（間接的な依存パッケージ）</td><td><span class="chip deny">未対応</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    本資料はソースコード（<code>guardrails/hooks/aiagent_guardrail_check.py</code> 他）・設定JSON・<code>docs/admin/</code> 配下の設計文書を基に作成した補助資料です。内容に矛盾がある場合は各正式文書（ガードレール設計.md／運用設計書.md／既知の限界.md／導入手順書.md）を正としてください。
+  </footer>
+
+</div>
+</body>
+</html>
