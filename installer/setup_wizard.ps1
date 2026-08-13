@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   AI Agent Guardrail セットアップウィザード（GUI）
@@ -535,15 +535,6 @@ function Update-CodexAuthMode {
 $rbCodexGateway.Add_CheckedChanged({ Update-CodexAuthMode })
 $rbCodexApi.Add_CheckedChanged({ Update-CodexAuthMode })
 Update-CodexAuthMode
-
-# Preserve the editable Claude JSON across reruns when it is already present.
-# Codex's Gateway input is an executable setup script and is deliberately not
-# persisted; config.toml is its output, not a script which may safely be
-# executed again.
-$existingClaudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
-if (Test-Path -LiteralPath $existingClaudeSettings -PathType Leaf) {
-    try { $tbClaudeAuth.Text = Get-Content -LiteralPath $existingClaudeSettings -Raw -Encoding UTF8 } catch { }
-}
 
 # ---- Group: Install path --------------------------------------------------
 $gbPath = New-Object System.Windows.Forms.GroupBox
@@ -1249,8 +1240,8 @@ $existing"
                 AppendLog "  インストール完了！" ([System.Drawing.Color]::DarkGreen)
                 AppendLog ""
                 AppendLog "  次のステップ:" ([System.Drawing.Color]::DarkGreen)
-                AppendLog "  1. ターミナルを再起動して PATH を更新してください。" ([System.Drawing.Color]::DarkGreen)
-                AppendLog "  2. Restart Claude Code completely before use." ([System.Drawing.Color]::DarkGreen)
+                AppendLog "  1. Claude Code, Codexが立ち上がっていたら終了してください。" ([System.Drawing.Color]::DarkGreen)
+                AppendLog "  2. AI Agent Workspaceのアイコンをダブルクリックすると開始できます。" ([System.Drawing.Color]::DarkGreen)
                 AppendLog "============================================" ([System.Drawing.Color]::DarkGreen)
                 $btnDone.Text      = "閉じる"
                 $btnDone.BackColor = $clrDone
