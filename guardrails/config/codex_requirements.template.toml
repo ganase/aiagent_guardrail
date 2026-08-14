@@ -1,5 +1,20 @@
-# Codex enterprise requirements template
-# 実際の配置先とサポート可否はCodexの管理者向け仕様に合わせて確認してください。
+﻿# Codex enterprise requirements template
+# This file contains organization-managed settings used by the standard installer.
 
 [windows]
 allowed_sandbox_implementations = ["elevated"]
+
+[features]
+hooks = true
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command_windows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AIAGENT_GUARDRAIL_HOME%\\hooks\\record_ai_turn.ps1" -Tool Codex'
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command_windows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AIAGENT_GUARDRAIL_HOME%\\hooks\\record_ai_turn.ps1" -Tool Codex'

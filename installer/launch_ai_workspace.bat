@@ -41,13 +41,27 @@ if errorlevel 1 (
     echo ERROR: Could not enter the selected folder.
     goto :End
 )
+set "AI_AGENT_AUDIT_ROOT=%BOX_TARGET%\Sandbox\%SANDBOX_USER%\AI-Agent-Audit"
+call :SyncAuditLogs
 if /i "%TOOL_COMMAND%"=="codex" (
     call codex --cd "%SELECTED_REPOSITORY%"
 ) else (
     call claude
 )
+set "TOOL_EXIT_CODE=!ERRORLEVEL!"
+call :SyncAuditLogs
 popd
+exit /b !TOOL_EXIT_CODE!
 goto :End
+
+
+:SyncAuditLogs
+set "AUDIT_TOOL=ClaudeCode"
+if /i "%TOOL_COMMAND%"=="codex" set "AUDIT_TOOL=Codex"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sync_ai_agent_logs.ps1" ^
+  -Tool "%AUDIT_TOOL%" -BoxTarget "%BOX_TARGET%" -SandboxUser "%SANDBOX_USER%"
+if errorlevel 1 echo WARNING: %TOOL_NAME% audit-log synchronization failed. The local logs were not removed.
+exit /b 0
 
 
 rem Fallback only: used when box_mount.local.cmd is absent, for example before

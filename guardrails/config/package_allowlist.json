@@ -1,174 +1,240 @@
 {
-  "schema_version": "1.0.0",
-  "allowlist_version": "0.1.0",
-  "updated_at": "2026-07-06",
-  "owner": "AI Governance Team",
-  "description": "deny-list-only ポリシー用のパッケージリスト。status=deny のエントリがブロック対象。allow/review エントリは typosquat 検出の参照名として機能し、インストール審査の対象ではない。初期サンプルであり、正式運用前に社内レビューが必要。",
-  "default_policy": "deny_list_only",
-  "ecosystems": {
-    "python": {
-      "package_manager": "pip",
-      "packages": [
-        {
-          "name": "pandas",
-          "status": "allow",
-          "allowed_versions": ">=2.0,<3.0",
-          "risk_level": "low",
-          "reason": "データ加工用途で広く利用される標準的なライブラリ。初期サンプル。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "正式運用前に社内レビューが必要。"
-        },
-        {
-          "name": "numpy",
-          "status": "allow",
-          "allowed_versions": ">=1.24,<3.0",
-          "risk_level": "low",
-          "reason": "数値計算用途で広く利用される標準的なライブラリ。初期サンプル。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "正式運用前に社内レビューが必要。"
-        },
-        {
-          "name": "openpyxl",
-          "status": "allow",
-          "allowed_versions": ">=3.1,<4.0",
-          "risk_level": "low",
-          "reason": "Excelファイル処理用途。初期サンプル。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "正式運用前に社内レビューが必要。"
-        },
-        {
-          "name": "requests",
-          "status": "review",
-          "allowed_versions": ">=2.31,<3.0",
-          "risk_level": "medium",
-          "reason": "HTTP通信を行うため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "外部通信用途の場合は用途・接続先を確認する。"
-        },
-        {
-          "name": "python-dotenv",
-          "status": "review",
-          "allowed_versions": ">=1.0,<2.0",
-          "risk_level": "medium",
-          "reason": "環境変数・Secret周辺で利用されるため扱いに注意が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "Secretをコミットしない運用とセットで使う。"
-        },
-        {
-          "name": "beautifulsoup4",
-          "status": "review",
-          "allowed_versions": ">=4.12,<5.0",
-          "risk_level": "medium",
-          "reason": "スクレイピング用途で利用される可能性があるため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "外部サイト利用規約・頻度制限を確認する。"
-        },
-        {
-          "name": "selenium",
-          "status": "review",
-          "allowed_versions": ">=4.0,<5.0",
-          "risk_level": "medium",
-          "reason": "ブラウザ自動操作を伴うため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "認証突破や高頻度アクセスは禁止。"
-        },
-        {
-          "name": "playwright",
-          "status": "review",
-          "allowed_versions": ">=1.40,<2.0",
-          "risk_level": "medium",
-          "reason": "ブラウザ自動操作を伴うため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "認証突破や高頻度アクセスは禁止。"
-        },
-        {
-          "name": "example-malicious-package",
-          "status": "deny",
-          "allowed_versions": "*",
-          "risk_level": "high",
-          "reason": "deny動作確認用のダミーパッケージ。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2099-12-31",
-          "notes": "実在パッケージを根拠なくdeny扱いしない。"
-        }
-      ]
-    },
-    "javascript": {
-      "package_manager": "npm",
-      "packages": [
-        {
-          "name": "axios",
-          "status": "review",
-          "allowed_versions": ">=1.6,<2.0",
-          "risk_level": "medium",
-          "reason": "HTTP通信を行うため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "外部通信用途の場合は用途・接続先を確認する。"
-        },
-        {
-          "name": "dayjs",
-          "status": "allow",
-          "allowed_versions": ">=1.11,<2.0",
-          "risk_level": "low",
-          "reason": "日時処理用途。初期サンプル。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "正式運用前に社内レビューが必要。"
-        },
-        {
-          "name": "puppeteer",
-          "status": "review",
-          "allowed_versions": ">=22.0,<30.0",
-          "risk_level": "medium",
-          "reason": "ブラウザ自動操作を伴うため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "外部サイト利用規約・頻度制限を確認する。"
-        },
-        {
-          "name": "playwright",
-          "status": "review",
-          "allowed_versions": ">=1.40,<2.0",
-          "risk_level": "medium",
-          "reason": "ブラウザ自動操作を伴うため用途確認が必要。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2026-12-31",
-          "notes": "外部サイト利用規約・頻度制限を確認する。"
-        },
-        {
-          "name": "example-malicious-package",
-          "status": "deny",
-          "allowed_versions": "*",
-          "risk_level": "high",
-          "reason": "deny動作確認用のダミーパッケージ。",
-          "reviewed_by": "AI Governance Team",
-          "reviewed_at": "2026-07-01",
-          "expires_at": "2099-12-31",
-          "notes": "実在パッケージを根拠なくdeny扱いしない。"
-        }
-      ]
-    }
-  }
+    "schema_version":  "1.0.0",
+    "allowlist_version":  "0.1.1",
+    "updated_at":  "2026-08-14",
+    "owner":  "AI Governance Team",
+    "description":  "deny-list-only ポリシー用のパッケージリスト。status=deny のエントリがブロック対象。allow/review エントリは typosquat 検出の参照名として機能し、インストール審査の対象ではない。初期サンプルであり、正式運用前に社内レビューが必要。",
+    "default_policy":  "deny_list_only",
+    "ecosystems":  {
+                       "python":  {
+                                      "package_manager":  "pip",
+                                      "packages":  [
+                                                       {
+                                                           "name":  "pandas",
+                                                           "status":  "allow",
+                                                           "allowed_versions":  "\u003e=2.0,\u003c3.0",
+                                                           "risk_level":  "low",
+                                                           "reason":  "データ加工用途で広く利用される標準的なライブラリ。初期サンプル。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "正式運用前に社内レビューが必要。"
+                                                       },
+                                                       {
+                                                           "name":  "numpy",
+                                                           "status":  "allow",
+                                                           "allowed_versions":  "\u003e=1.24,\u003c3.0",
+                                                           "risk_level":  "low",
+                                                           "reason":  "数値計算用途で広く利用される標準的なライブラリ。初期サンプル。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "正式運用前に社内レビューが必要。"
+                                                       },
+                                                       {
+                                                           "name":  "openpyxl",
+                                                           "status":  "allow",
+                                                           "allowed_versions":  "\u003e=3.1,\u003c4.0",
+                                                           "risk_level":  "low",
+                                                           "reason":  "Excelファイル処理用途。初期サンプル。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "正式運用前に社内レビューが必要。"
+                                                       },
+                                                       {
+                                                           "name":  "requests",
+                                                           "status":  "review",
+                                                           "allowed_versions":  "\u003e=2.31,\u003c3.0",
+                                                           "risk_level":  "medium",
+                                                           "reason":  "HTTP通信を行うため用途確認が必要。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "外部通信用途の場合は用途・接続先を確認する。"
+                                                       },
+                                                       {
+                                                           "name":  "python-dotenv",
+                                                           "status":  "review",
+                                                           "allowed_versions":  "\u003e=1.0,\u003c2.0",
+                                                           "risk_level":  "medium",
+                                                           "reason":  "環境変数・Secret周辺で利用されるため扱いに注意が必要。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "Secretをコミットしない運用とセットで使う。"
+                                                       },
+                                                       {
+                                                           "name":  "beautifulsoup4",
+                                                           "status":  "review",
+                                                           "allowed_versions":  "\u003e=4.12,\u003c5.0",
+                                                           "risk_level":  "medium",
+                                                           "reason":  "スクレイピング用途で利用される可能性があるため用途確認が必要。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "外部サイト利用規約・頻度制限を確認する。"
+                                                       },
+                                                       {
+                                                           "name":  "selenium",
+                                                           "status":  "review",
+                                                           "allowed_versions":  "\u003e=4.0,\u003c5.0",
+                                                           "risk_level":  "medium",
+                                                           "reason":  "ブラウザ自動操作を伴うため用途確認が必要。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "認証突破や高頻度アクセスは禁止。"
+                                                       },
+                                                       {
+                                                           "name":  "playwright",
+                                                           "status":  "review",
+                                                           "allowed_versions":  "\u003e=1.40,\u003c2.0",
+                                                           "risk_level":  "medium",
+                                                           "reason":  "ブラウザ自動操作を伴うため用途確認が必要。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2026-12-31",
+                                                           "notes":  "認証突破や高頻度アクセスは禁止。"
+                                                       },
+                                                       {
+                                                           "name":  "example-malicious-package",
+                                                           "status":  "deny",
+                                                           "allowed_versions":  "*",
+                                                           "risk_level":  "high",
+                                                           "reason":  "deny動作確認用のダミーパッケージ。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-07-01",
+                                                           "expires_at":  "2099-12-31",
+                                                           "notes":  "実在パッケージを根拠なくdeny扱いしない。"
+                                                       },
+                                                       {
+                                                           "name":  "ctx",
+                                                           "status":  "deny",
+                                                           "allowed_versions":  "*",
+                                                           "risk_level":  "high",
+                                                           "reason":  "過去に悪性コード混入事案が報告されたPyPIパッケージ名。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-08-14",
+                                                           "expires_at":  "2027-08-14",
+                                                           "notes":  "既知の悪性配布・typosquat事案に基づく初期deny登録。定期レビューで根拠と継続要否を確認する。"
+                                                       },
+                                                       {
+                                                           "name":  "jeilyfish",
+                                                           "status":  "deny",
+                                                           "allowed_versions":  "*",
+                                                           "risk_level":  "high",
+                                                           "reason":  "過去に悪性PyPIパッケージとして報告された名称。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-08-14",
+                                                           "expires_at":  "2027-08-14",
+                                                           "notes":  "既知の悪性配布・typosquat事案に基づく初期deny登録。定期レビューで根拠と継続要否を確認する。"
+                                                       },
+                                                       {
+                                                           "name":  "colourama",
+                                                           "status":  "deny",
+                                                           "allowed_versions":  "*",
+                                                           "risk_level":  "high",
+                                                           "reason":  "正規の colorama を狙うtyposquatとして報告された名称。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-08-14",
+                                                           "expires_at":  "2027-08-14",
+                                                           "notes":  "既知の悪性配布・typosquat事案に基づく初期deny登録。定期レビューで根拠と継続要否を確認する。"
+                                                       },
+                                                       {
+                                                           "name":  "pygrata",
+                                                           "status":  "deny",
+                                                           "allowed_versions":  "*",
+                                                           "risk_level":  "high",
+                                                           "reason":  "認証情報窃取目的の悪性パッケージとして報告された名称。",
+                                                           "reviewed_by":  "AI Governance Team",
+                                                           "reviewed_at":  "2026-08-14",
+                                                           "expires_at":  "2027-08-14",
+                                                           "notes":  "既知の悪性配布・typosquat事案に基づく初期deny登録。定期レビューで根拠と継続要否を確認する。"
+                                                       }
+                                                   ]
+                                  },
+                       "javascript":  {
+                                          "package_manager":  "npm",
+                                          "packages":  [
+                                                           {
+                                                               "name":  "axios",
+                                                               "status":  "review",
+                                                               "allowed_versions":  "\u003e=1.6,\u003c2.0",
+                                                               "risk_level":  "medium",
+                                                               "reason":  "HTTP通信を行うため用途確認が必要。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-07-01",
+                                                               "expires_at":  "2026-12-31",
+                                                               "notes":  "外部通信用途の場合は用途・接続先を確認する。"
+                                                           },
+                                                           {
+                                                               "name":  "dayjs",
+                                                               "status":  "allow",
+                                                               "allowed_versions":  "\u003e=1.11,\u003c2.0",
+                                                               "risk_level":  "low",
+                                                               "reason":  "日時処理用途。初期サンプル。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-07-01",
+                                                               "expires_at":  "2026-12-31",
+                                                               "notes":  "正式運用前に社内レビューが必要。"
+                                                           },
+                                                           {
+                                                               "name":  "puppeteer",
+                                                               "status":  "review",
+                                                               "allowed_versions":  "\u003e=22.0,\u003c30.0",
+                                                               "risk_level":  "medium",
+                                                               "reason":  "ブラウザ自動操作を伴うため用途確認が必要。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-07-01",
+                                                               "expires_at":  "2026-12-31",
+                                                               "notes":  "外部サイト利用規約・頻度制限を確認する。"
+                                                           },
+                                                           {
+                                                               "name":  "playwright",
+                                                               "status":  "review",
+                                                               "allowed_versions":  "\u003e=1.40,\u003c2.0",
+                                                               "risk_level":  "medium",
+                                                               "reason":  "ブラウザ自動操作を伴うため用途確認が必要。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-07-01",
+                                                               "expires_at":  "2026-12-31",
+                                                               "notes":  "外部サイト利用規約・頻度制限を確認する。"
+                                                           },
+                                                           {
+                                                               "name":  "example-malicious-package",
+                                                               "status":  "deny",
+                                                               "allowed_versions":  "*",
+                                                               "risk_level":  "high",
+                                                               "reason":  "deny動作確認用のダミーパッケージ。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-07-01",
+                                                               "expires_at":  "2099-12-31",
+                                                               "notes":  "実在パッケージを根拠なくdeny扱いしない。"
+                                                           },
+                                                           {
+                                                               "name":  "crossenv",
+                                                               "status":  "deny",
+                                                               "allowed_versions":  "*",
+                                                               "risk_level":  "high",
+                                                               "reason":  "正規の cross-env を狙うtyposquatとして報告された名称。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-08-14",
+                                                               "expires_at":  "2027-08-14",
+                                                               "notes":  "既知の悪性配布・typosquat事案に基づく初期deny登録。定期レビューで根拠と継続要否を確認する。"
+                                                           },
+                                                           {
+                                                               "name":  "flatmap-stream",
+                                                               "status":  "deny",
+                                                               "allowed_versions":  "*",
+                                                               "risk_level":  "high",
+                                                               "reason":  "過去の悪性依存混入事案に関係するnpmパッケージ名。",
+                                                               "reviewed_by":  "AI Governance Team",
+                                                               "reviewed_at":  "2026-08-14",
+                                                               "expires_at":  "2027-08-14",
+                                                               "notes":  "既知の悪性配布・typosquat事案に基づく初期deny登録。定期レビューで根拠と継続要否を確認する。"
+                                                           }
+                                                       ]
+                                      }
+                   }
 }

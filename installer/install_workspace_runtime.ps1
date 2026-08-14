@@ -10,7 +10,7 @@ $maintenanceRoot = Join-Path $WorkspaceRoot 'maintenance'
 $configRoot = Join-Path $WorkspaceRoot 'config'
 New-Item -ItemType Directory -Force -Path $launcherRoot, $maintenanceRoot, $configRoot | Out-Null
 $sourceInstaller = Join-Path $PackageRoot 'installer'
-foreach ($name in @('launch_ai_workspace.bat', 'configure_box_mount.ps1', 'mount_box_drive.bat', 'mount_box_drive_silent.vbs', 'register_box_startup.ps1')) {
+foreach ($name in @('launch_ai_workspace.bat', 'sync_ai_agent_logs.ps1', 'configure_box_mount.ps1', 'mount_box_drive.bat', 'mount_box_drive_silent.vbs', 'register_box_startup.ps1')) {
   Copy-Item -LiteralPath (Join-Path $sourceInstaller $name) -Destination (Join-Path $launcherRoot $name) -Force
 }
 foreach ($name in @('check_status.ps1', 'uninstall_standard.ps1', 'uninstall.bat')) {

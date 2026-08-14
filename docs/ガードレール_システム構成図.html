@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI Agent ガードレール システム構成図 v0.2</title>
+<title>AI Agent ガードレール システム構成図 v0.3</title>
 <style>
   :root{
     color-scheme: light;
@@ -258,7 +258,7 @@
     <h1>ガードレール システム構成図</h1>
     <p>Codex / Claude Code を安全に展開するための標準ガードレールが、どのように配布・導入され、AIエージェントの操作をどう止める／通すかを1枚で説明する資料です。システム構成、利用者の操作フロー、導入手順の3部構成。</p>
     <div class="meta">
-      <span>対象バージョン: v0.2 系</span>
+      <span>対象バージョン: v0.3.0（未リリース分の認証設定2モード化・共有ドライブ指定可能化を含む）</span>
       <span>対象読者: 導入担当者・利用者・AIガバナンスチーム</span>
       <span>関連文書: docs/admin/ガードレール設計.md、docs/user/導入手順書.md</span>
     </div>
@@ -349,9 +349,9 @@
   <!-- ===== Row 2: Hook本体 ===== -->
   <rect x="330" y="336" width="480" height="110" rx="10" fill="#4a3aa7" opacity="0.12" stroke="#4a3aa7" stroke-width="1.4"/>
   <text x="352" y="360" font-size="13" font-weight="700" fill="#332a75">guardrails/hooks/aiagent_guardrail_check.py</text>
-  <text x="352" y="380" font-size="11" fill="#52514e">run_guardrail_hook.cmd 経由で起動（fail-closed：Python不在／例外は即ブロック）</text>
+  <text x="352" y="380" font-size="11" fill="#52514e">run_guardrail_hook.cmd 経由で起動（コマンド判定はfail-closed）</text>
   <text x="352" y="398" font-size="11" fill="#52514e">改ざん検証 → 危険コマンド判定 → blocked_paths → ランタイム／パッケージ3層判定</text>
-  <text x="352" y="416" font-size="11" fill="#52514e">Credentialスキャン（Prompt/Edit/Write/PostToolUse） → 変更回数レート制限</text>
+  <text x="352" y="416" font-size="11" fill="#52514e">Credentialスキャン（UserPromptSubmit/PostToolUse） → 変更回数レート制限</text>
   <text x="352" y="434" font-size="10.5" fill="#898781">stdin: hook JSON（tool_name / tool_input / session_id） → stdout/exit code で応答</text>
 
   <!-- ===== Row 3: Claude Code triggers ===== -->
@@ -382,23 +382,23 @@
 
   <!-- decision output box -->
   <rect x="530" y="486" width="290" height="150" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
-  <text x="550" y="508" font-size="12" font-weight="700" fill="#0b0b0b">3層判定（詳細は下図2）</text>
+  <text x="550" y="508" font-size="12" font-weight="700" fill="#0b0b0b">Hookの判定結果（パッケージ判定は下図2）</text>
   <g>
     <rect x="550" y="522" width="72" height="24" rx="12" fill="#0ca30c" opacity="0.14"/>
     <text x="586" y="538" font-size="10.5" font-weight="700" fill="#0a7a0a" text-anchor="middle">allow</text>
   </g>
   <g>
     <rect x="632" y="522" width="72" height="24" rx="12" fill="#fab219" opacity="0.18"/>
-    <text x="668" y="538" font-size="10.5" font-weight="700" fill="#8a6300" text-anchor="middle">警告</text>
+    <text x="668" y="538" font-size="10.5" font-weight="700" fill="#8a6300" text-anchor="middle">ask</text>
   </g>
   <g>
     <rect x="714" y="522" width="72" height="24" rx="12" fill="#d03b3b" opacity="0.14"/>
     <text x="750" y="538" font-size="10.5" font-weight="700" fill="#b3201f" text-anchor="middle">deny</text>
   </g>
-  <text x="550" y="562" font-size="10.5" fill="#52514e">exit 0 + JSON permissionDecision</text>
-  <text x="550" y="578" font-size="10.5" fill="#52514e">（allow） / exit 2（deny・即停止）</text>
-  <text x="550" y="600" font-size="10.5" fill="#52514e">PostToolUseは警告のみ（ブロックしない）</text>
-  <text x="550" y="616" font-size="10.5" fill="#52514e">— 操作は既に完了しているため</text>
+  <text x="550" y="562" font-size="10.5" fill="#52514e">exit 0 + permissionDecision</text>
+  <text x="550" y="578" font-size="10.5" fill="#52514e">allow／ask（要確認） / exit 2（deny）</text>
+  <text x="550" y="600" font-size="10.5" fill="#52514e">askはcurl/wget/pip --user等が対象</text>
+  <text x="550" y="616" font-size="10.5" fill="#52514e">利用者が対象・送信先を確認して判断</text>
 
   <!-- hook -> decision -->
   <line x1="600" y1="446" x2="640" y2="486" stroke="#898781" stroke-width="1.4" marker-end="url(#arrow)"/>
@@ -428,7 +428,8 @@
 
     <div class="callout info" style="margin-top:18px;">
       <strong>読み方のポイント</strong>
-      Hookの実体は<strong>1本のPythonスクリプト</strong>（<code>aiagent_guardrail_check.py</code>）で、Claude Code の managed-settings から起動します。危険コマンド・ランタイム導入・パッケージ導入・機密ファイル読取・Credential検知・変更回数制限をこの1本が担い、判断材料はJSON設定として外部化されています。Codexには同等のHookはないため、Windows Sandbox、<code>approval_policy</code>、<code>ai-pip</code>/<code>ai-npm</code>経由の依存導入チェックで補完します。素の<code>pip</code>/<code>npm</code>は直接検査されません。
+      Hookの実体は<strong>1本のPythonスクリプト</strong>（<code>aiagent_guardrail_check.py</code>）で、Claude Code の managed-settings から起動します。危険コマンド・ランタイム導入・パッケージ導入・機密ファイル読取・Credential検知・変更回数制限をこの1本が担い、判断材料はJSON設定として外部化されています。Codexには同等のHookはないため、Windows Sandbox、<code>approval_policy</code>、<code>ai-pip</code>/<code>ai-npm</code>経由の依存導入チェックで補完します。素の<code>pip</code>/<code>npm</code>は直接検査されません。<br /><br />
+      <strong>fail-closed の適用範囲</strong> は危険コマンド判定（Bash）に限られます。Read/Edit/Write の機密ファイル判定（<code>check_file_access</code>）は内部エラー時にfail-open（警告を出しつつ許可）となります。また、PostToolUseのCredential検知はブロックせず<code>stderr</code>への警告のみです（操作が既に完了しているため）。
     </div>
   </section>
 
@@ -622,7 +623,7 @@
         <div class="n">1</div>
         <div class="body">
           <h4>ZIPを展開して SETUP.bat を実行</h4>
-          <p>GitHubからリポジトリをZIPで取得し、任意のフォルダに解凍。<code>SETUP.bat</code> をダブルクリックすると、共有ドライブの初回設定（Box等、使わない場合はスキップ可）→ 自動マウント → UAC確認 → GUIウィザード起動まで自動で進みます。</p>
+          <p>配布されたリポジトリをZIPで取得し、任意のフォルダに解凍。<code>SETUP.bat</code> をダブルクリックすると、共有ドライブの初回設定（Box等、使わない場合はスキップ可）→ 自動マウント → UAC確認 → GUIウィザード起動まで自動で進みます。</p>
         </div>
       </div>
       <div class="step-row">
@@ -683,28 +684,96 @@
     <h2 class="section-title"><span class="num">5</span>何を守り、何を守らないか</h2>
     <p class="lead">本ガードレールは「完全なセキュリティ」ではなく「善意のAIエージェントに対する摩擦と監査ログの提供」です。詳細は <code>docs/admin/既知の限界.md</code> を正としてください。</p>
 
+    <div class="callout info" style="margin-bottom:20px;">
+      <strong>読み方：境界線は「Claude Code経由かどうか」</strong>
+      Hookが介入できるのは、<strong>Claude Codeが提案し、managed-settings経由で呼び出された操作だけ</strong>です。①同じ操作でもCodexが提案した場合（同等のHookが無い）、②利用者が自分でターミナルを開いて直接実行した場合、③Hookの文字列マッチをコード的にすり抜けた場合は、いずれもこの境界の外側にあるため防げません。下の2表は、この境界の内側（守れるもの）と外側・境界内の精度限界（守れないもの）を具体例つきで整理したものです。
+    </div>
+
     <div class="grid-2">
       <div class="card">
         <h3 style="margin-top:0;color:#0a7a0a;">守れるもの</h3>
+        <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px;">いずれも「Claude Codeがそれを提案し、Hookが呼び出された」場合に働きます。</p>
         <table class="spec">
+          <thead><tr><th>項目</th><th>状態</th><th>具体例・理由</th></tr></thead>
           <tbody>
-            <tr><td>Claude Code から提案された危険コマンド・再帰削除</td><td><span class="chip allow">対応</span></td></tr>
-            <tr><td>Claude Code から提案された禁止・類似名パッケージ導入</td><td><span class="chip allow">対応</span></td></tr>
-            <tr><td>Bash / Edit / Write 経由の既知の機密ファイルパターン読取</td><td><span class="chip allow">対応</span></td></tr>
-            <tr><td>プロンプト・ツール出力中の既知形式のAPIキー等</td><td><span class="chip allow">対応</span></td></tr>
-            <tr><td>設定ファイル・Hook本体・テンプレートの改ざん</td><td><span class="chip allow">対応（ACL保護時）</span></td></tr>
+            <tr>
+              <td>危険コマンド・再帰削除</td>
+              <td><span class="chip allow">対応</span></td>
+              <td>例: <code>rm -rf /</code>、<code>Remove-Item -Recurse -Force C:\</code> 等。Claude Codeが提案した時点でパターンに一致し、実行前にブロックされる。</td>
+            </tr>
+            <tr>
+              <td>禁止・類似名パッケージの導入</td>
+              <td><span class="chip allow">対応</span></td>
+              <td>例: denyリスト登録パッケージ、または <code>pandas</code> に似た <code>pandsa</code>（typosquat）。<code>pip install</code> / <code>npm install</code> の実行前に照合される。</td>
+            </tr>
+            <tr>
+              <td>既知の機密ファイルパターン読取</td>
+              <td><span class="chip allow">対応</span></td>
+              <td>例: <code>.env</code>、<code>id_rsa</code>、<code>*.pem</code> 等を Bash / Edit / Write で読もうとした場合、内容を一切表示せずブロック。</td>
+            </tr>
+            <tr>
+              <td>既知形式のAPIキー等の混入</td>
+              <td><span class="chip allow">対応</span></td>
+              <td>例: AWSキー・GitHubトークン・JWT等をプロンプトに直接貼った場合はブロック。ツール出力に紛れ込んだ場合は警告（後述）。</td>
+            </tr>
+            <tr>
+              <td>設定ファイル・Hook本体・テンプレートの改ざん</td>
+              <td><span class="chip allow">対応（ACL保護時）</span></td>
+              <td>例: 利用者が <code>guardrail_policy.json</code> を書き換えても、<code>installed_hashes.csv</code> との照合で検知し動作を止める。管理者導入（ACL保護）が前提。</td>
+            </tr>
           </tbody>
         </table>
       </div>
       <div class="card">
         <h3 style="margin-top:0;color:#b3201f;">守れないもの</h3>
+        <p style="margin:0 0 12px;color:var(--text-secondary);font-size:13px;">「境界の外側」（Hookが呼ばれない）と「境界の内側だが精度・網羅性に限界がある」ものが混在します。</p>
         <table class="spec">
           <tbody>
-            <tr><td><code>python -c</code>やスクリプト経由での回避</td><td><span class="chip deny">未対応</span></td></tr>
-            <tr><td>Codexが素の pip/npm を直接実行する場合</td><td><span class="chip deny">未対応</span></td></tr>
-            <tr><td>利用者がターミナルで直接実行するコマンド</td><td><span class="chip deny">未対応</span></td></tr>
-            <tr><td>未知パッケージそのもの（deny-list-onlyの設計上）</td><td><span class="chip warn">部分対応</span></td></tr>
-            <tr><td>推移的依存（間接的な依存パッケージ）</td><td><span class="chip deny">未対応</span></td></tr>
+            <tr>
+              <td><code>python -c</code>やスクリプト経由での回避</td>
+              <td><span class="chip deny">未対応</span></td>
+              <td>例: <code>python -c "import pip; pip.main(['install','evil'])"</code>。Hookはコマンド文字列のパターンマッチのため、この呼び方では発火しない。</td>
+            </tr>
+            <tr>
+              <td>Codexが素の pip/npm を直接実行する場合</td>
+              <td><span class="chip deny">未対応</span></td>
+              <td>CodexにはClaude Code相当のHook機構が無い。<code>ai-pip</code>/<code>ai-npm</code>経由でない限り検査されず、Windows Sandbox・<code>approval_policy</code>で補う。</td>
+            </tr>
+            <tr>
+              <td>利用者がターミナルで直接実行するコマンド</td>
+              <td><span class="chip deny">未対応</span></td>
+              <td>Claude Code / Codexを介さず、利用者が自分でPowerShellやターミナルを開いて実行した場合、そもそもHookは呼ばれない。</td>
+            </tr>
+            <tr>
+              <td>未知パッケージそのもの</td>
+              <td><span class="chip warn">部分対応</span></td>
+              <td>deny-list-onlyの設計上、allowlistに登録が無い新規パッケージは自動的に <code>allow</code> になる（未知＝ブロックではない）。</td>
+            </tr>
+            <tr>
+              <td>推移的依存（間接的な依存パッケージ）</td>
+              <td><span class="chip deny">未対応</span></td>
+              <td>例: <code>pip install pandas</code> を許可しても、pandasが依存する numpy 等は個別に検査されない。</td>
+            </tr>
+            <tr>
+              <td><code>allowed_versions</code>のバージョン範囲チェック</td>
+              <td><span class="chip deny">未対応</span></td>
+              <td>設定上の参照値であり実行時検証は無い。既知の脆弱性がある古いバージョンを指定してもブロックされない。</td>
+            </tr>
+            <tr>
+              <td><code>installed_hashes.csv</code>非存在時の改ざん検知</td>
+              <td><span class="chip deny">未対応</span></td>
+              <td>開発環境やインストール直後などハッシュファイルが無い状態では、警告なしにそのまま通過する（改ざんと未生成の区別ができない）。</td>
+            </tr>
+            <tr>
+              <td>Credential検出の誤検知・見逃し</td>
+              <td><span class="chip warn">部分対応</span></td>
+              <td>正規表現ベースのため、サンプルコードのダミーキーで誤ってブロックされたり、社内独自形式のシークレットが検出されなかったりする。</td>
+            </tr>
+            <tr>
+              <td>Gateway貼り付け方式の一時ファイルリスク</td>
+              <td><span class="chip warn">部分対応</span></td>
+              <td>導入時のプロセス異常終了で平文が <code>%TEMP%</code> に残る可能性、公式Set Up画面以外のテキストを貼るとPowerShellとして実行されてしまうリスクがある。</td>
+            </tr>
           </tbody>
         </table>
       </div>
