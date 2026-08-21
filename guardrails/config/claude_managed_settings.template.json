@@ -1,4 +1,4 @@
-﻿{
+{
     "permissions":  {
                         "deny":  [
                                      "Read(./.env)",
@@ -95,7 +95,27 @@
                                                  }
                                              ]
                                }
-                           ]
+                           ],
+                  "PermissionRequest":  [
+                                            {
+                                                "hooks":  [
+                                                              {
+                                                                  "command":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AIAGENT_GUARDRAIL_HOME%\\\\hooks\\\\approve_safe_request.ps1\" -Tool ClaudeCode",
+                                                                  "type":  "command"
+                                                              }
+                                                          ],
+                                                "matcher":  "Bash"
+                                            },
+                                            {
+                                                "hooks":  [
+                                                              {
+                                                                  "command":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AIAGENT_GUARDRAIL_HOME%\\\\hooks\\\\approve_safe_request.ps1\" -Tool ClaudeCode",
+                                                                  "type":  "command"
+                                                              }
+                                                          ],
+                                                "matcher":  "Read|Glob|Grep"
+                                            }
+                                        ]
               },
     "allowedMcpServers":  [
 

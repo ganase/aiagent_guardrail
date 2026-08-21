@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI Agent Workspace システム構成図</title>
+<title>Coding Agent for IT システム構成図</title>
 <style>
   :root{
     color-scheme: light;
@@ -121,7 +121,7 @@
 <div class="doc">
 
   <header class="hero">
-    <div class="eyebrow">AI Agent Workspace</div>
+    <div class="eyebrow">Coding Agent for IT</div>
     <h1>システム構成図</h1>
     <p>1台のPCにインストールされたプログラム、Claude Code / Codex のローカルモジュール、作業リポジトリの置き場所、LLM（推論の実体）がどこにあるかを1枚で示します。ガードレール（審査・ブロックの仕組み）は対象外です。ガードレールの詳細は別紙 <code>docs/ガードレール_システム構成図.html</code> を参照してください。</p>
     <div class="meta">
@@ -142,7 +142,7 @@
     </div>
 
     <figure class="diagram-wrap">
-<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AI Agent Workspace システム構成図">
+<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Coding Agent for IT システム構成図">
   <defs>
     <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
       <path d="M0,0 L9,4.5 L0,9 z" fill="#898781"/>
@@ -187,8 +187,8 @@
 
   <!-- A4: 導入フォルダ／ランチャー -->
   <rect x="40" y="536" width="320" height="80" rx="10" fill="#2a78d6" opacity="0.10" stroke="#2a78d6"/>
-  <text x="58" y="558" font-size="12.5" font-weight="700" fill="#184f95">AIAgent_Workspace（導入フォルダ）</text>
-  <text x="58" y="578" font-size="10.8" fill="#52514e">C:\Users\&lt;ユーザー名&gt;\AIAgent_Workspace\launcher\</text>
+  <text x="58" y="558" font-size="12.5" font-weight="700" fill="#184f95">CodingAgentForIT（導入フォルダ）</text>
+  <text x="58" y="578" font-size="10.8" fill="#52514e">C:\Users\&lt;ユーザー名&gt;\CodingAgentForIT\launcher\</text>
   <text x="58" y="594" font-size="10.8" fill="#52514e">launch_ai_workspace.bat（ワークスペースランチャー）</text>
 
   <!-- ===== Column B: 共有ワークスペース ===== -->
@@ -208,9 +208,9 @@
   <text x="458" y="298" font-size="11" fill="#52514e">個人用のリポジトリ（試行・個人利用）</text>
   <text x="458" y="314" font-size="10.5" fill="#898781">ワークスペースランチャーの選択肢[2]</text>
 
-  <!-- B3: AI-Agent-Audit -->
+  <!-- B3: CodingAgentForIT-Audit -->
   <rect x="440" y="362" width="320" height="130" rx="10" fill="#fcfcfb" stroke="#e1e0d9"/>
-  <text x="458" y="384" font-size="12.5" font-weight="700" fill="#0b0b0b">Sandbox\&lt;ユーザー&gt;\AI-Agent-Audit\</text>
+  <text x="458" y="384" font-size="12.5" font-weight="700" fill="#0b0b0b">Sandbox\&lt;ユーザー&gt;\CodingAgentForIT-Audit\</text>
   <text x="458" y="404" font-size="11" fill="#52514e">Codex／ClaudeCode 配下に操作ログを同期</text>
   <text x="458" y="420" font-size="11" fill="#52514e">history.jsonl・sessions・debug 等（ホワイトリスト）</text>
   <text x="458" y="440" font-size="10.5" fill="#b3201f" font-weight="700">認証情報・設定ファイルは同期対象外</text>
@@ -270,7 +270,7 @@
             <tr><td>AIエージェント本体</td><td><code>claude</code>、<code>codex</code>（CLI）</td></tr>
             <tr><td>Claude Codeのモジュール</td><td><code>~/.claude/</code>（settings.json 等）</td></tr>
             <tr><td>Codexのモジュール</td><td><code>~/.codex/</code>（config.toml 等）</td></tr>
-            <tr><td>導入フォルダ</td><td><code>C:\Users\&lt;user&gt;\AIAgent_Workspace\</code></td></tr>
+            <tr><td>導入フォルダ</td><td><code>C:\Users\&lt;user&gt;\CodingAgentForIT\</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -280,7 +280,7 @@
           <tbody>
             <tr><td>チーム共有リポジトリ</td><td><code>&lt;Box&gt;\Operation\&lt;repository&gt;</code></td></tr>
             <tr><td>個人用リポジトリ</td><td><code>&lt;Box&gt;\Sandbox\&lt;user&gt;\&lt;repository&gt;</code></td></tr>
-            <tr><td>操作ログの同期先</td><td><code>&lt;Box&gt;\Sandbox\&lt;user&gt;\AI-Agent-Audit\</code></td></tr>
+            <tr><td>操作ログの同期先</td><td><code>&lt;Box&gt;\Sandbox\&lt;user&gt;\CodingAgentForIT-Audit\</code></td></tr>
             <tr><td>部内業務利用（Level 3）時</td><td>組織指定のGit基盤へも保存</td></tr>
           </tbody>
         </table>

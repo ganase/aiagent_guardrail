@@ -18,7 +18,7 @@ if errorlevel 1 (
 
 echo.
 echo [OK] The shared folder configuration was saved.
-echo The new configuration will be used the next time AI Agent Workspace starts.
+echo The new configuration will be used the next time Coding Agent for IT starts.
 echo.
 pause
 exit /b 0

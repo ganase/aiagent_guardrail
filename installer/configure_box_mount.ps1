@@ -1,13 +1,44 @@
 ﻿#Requires -Version 5.1
-param([string]$ConfigPath)
+param([string]$ConfigPath, [switch]$SkipIfOwnedByCurrentUser)
+
+function Test-BoxMountConfigOwnedByCurrentUser {
+    # A saved config only reflects "this user already chose a folder" when its
+    # TARGET_DIR actually sits under this user's profile. A config carried
+    # over from another Windows user (e.g. copied along with a shared
+    # installer package) must not be mistaken for that.
+    param([string]$Path, [string]$UserProfilePath)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $enabled = $null
+    $targetDir = $null
+    Get-Content -LiteralPath $Path | ForEach-Object {
+        if ($_ -match '^\s*set\s+"BOX_ENABLED=(.*)"\s*$') { $enabled = $Matches[1] }
+        if ($_ -match '^\s*set\s+"TARGET_DIR=(.*)"\s*$') { $targetDir = $Matches[1] }
+    }
+    if ($enabled -eq '0') { return $true }
+    if (-not $targetDir) { return $false }
+    return ($targetDir -eq $UserProfilePath -or $targetDir.StartsWith(($UserProfilePath + '\'), [System.StringComparison]::OrdinalIgnoreCase))
+}
 
 $localConfigPath = if ($ConfigPath) { $ConfigPath } else { Join-Path (Split-Path -Parent $PSScriptRoot) "config\box_mount.local.cmd" }
 New-Item -ItemType Directory -Path (Split-Path -Parent $localConfigPath) -Force | Out-Null
 $userProfilePath = [System.IO.Path]::GetFullPath($env:USERPROFILE).TrimEnd('\')
+
+if ($SkipIfOwnedByCurrentUser -and (Test-BoxMountConfigOwnedByCurrentUser -Path $localConfigPath -UserProfilePath $userProfilePath)) {
+    exit 0
+}
+
 $defaultTarget = $userProfilePath
 if (Test-Path -LiteralPath $localConfigPath -PathType Leaf) {
     Get-Content -LiteralPath $localConfigPath | ForEach-Object {
-        if ($_ -match '^\s*set\s+"TARGET_DIR=(.*)"\s*$') { $defaultTarget = $Matches[1] }
+        if ($_ -match '^\s*set\s+"TARGET_DIR=(.*)"\s*$') {
+            $candidate = $Matches[1]
+            # Only suggest the saved path as the default when it belongs to
+            # this user; otherwise it is another user's path and would fail
+            # the same-profile check below anyway.
+            if ($candidate -eq $userProfilePath -or $candidate.StartsWith(($userProfilePath + '\'), [System.StringComparison]::OrdinalIgnoreCase)) {
+                $defaultTarget = $candidate
+            }
+        }
     }
 }
 

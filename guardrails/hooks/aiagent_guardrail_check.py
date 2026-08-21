@@ -93,6 +93,7 @@ def verify_hashes(config_dir: Path, require_hash_file: bool = False) -> str | No
         "config\\guardrail_policy.json": config_dir / "guardrail_policy.json",
         "config\\package_allowlist.json": config_dir / "package_allowlist.json",
         "config\\runtime_policy.json": config_dir / "runtime_policy.json",
+        "config\\safe_approval_policy.json": config_dir / "safe_approval_policy.json",
         "hooks\\aiagent_guardrail_check.py": guardrails_dir / "hooks" / "aiagent_guardrail_check.py",
         "hooks\\run_guardrail_hook.cmd": guardrails_dir / "hooks" / "run_guardrail_hook.cmd",
         "templates\\claude\\CLAUDE.md": guardrails_dir / "templates" / "claude" / "CLAUDE.md",

@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$InstallRoot
 )
 $ErrorActionPreference = "Continue"
@@ -15,6 +15,7 @@ $paths = @(
   "config\guardrail_policy.json",
   "config\package_allowlist.json",
   "config\runtime_policy.json",
+  "config\safe_approval_policy.json",
   "config\claude_managed_settings.template.json",
   "hooks\aiagent_guardrail_check.py",
   "hooks\run_guardrail_hook.cmd",

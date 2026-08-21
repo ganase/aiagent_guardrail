@@ -4,11 +4,15 @@
   AI Agent Guardrail セットアップウィザード（GUI）
   SETUP.bat または PowerShell から直接実行できます。
 #>
-param()
+param([string]$CallerUserProfile, [string]$CallerDesktop)
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
+
+# These values identify the user who launched SETUP.bat before UAC elevation.
+$workspaceUserProfile = if ($CallerUserProfile) { [IO.Path]::GetFullPath($CallerUserProfile) } else { $env:USERPROFILE }
+$workspaceDesktop = if ($CallerDesktop) { [IO.Path]::GetFullPath($CallerDesktop) } else { [Environment]::GetFolderPath("Desktop") }
 
 # ---- Paths ----------------------------------------------------------------
 $repoRoot        = Split-Path -Parent $PSScriptRoot
@@ -139,7 +143,7 @@ $claudeVer = if ($hasClaude) {
 } else { $null }
 $codexVer  = if ($hasCodex)  { "検出済み" } else { $null }
 
-$defaultInstallPath = Join-Path $env:USERPROFILE "AIAgent_Workspace"
+$defaultInstallPath = Join-Path $workspaceUserProfile "CodingAgentForIT"
 
 # ---- Design tokens --------------------------------------------------------
 $clrHeader    = [System.Drawing.Color]::FromArgb(0, 71, 171)
@@ -165,23 +169,28 @@ $fntBtn   = New-Object System.Drawing.Font("Meiryo UI", 11, [System.Drawing.Font
 $fntLog   = New-Object System.Drawing.Font("Consolas",   9)
 
 # ---- Form -----------------------------------------------------------------
-$contentSize = New-Object System.Drawing.Size(600, 1218)
+# Content is split across two tabs (see TabControl below) instead of one long
+# vertically-scrolling page. $headerHeight covers the banner above the tabs;
+# $tabContentSize is the taller of the two tabs' content and sizes the
+# TabControl. Each TabPage also gets its own AutoScrollMinSize, so a per-tab
+# scrollbar appears only if a smaller screen still can't fit that tab.
+$headerHeight     = 82
+$tabStripOverhead = 40
+$tabContentSize   = New-Object System.Drawing.Size(600, 628)
+$contentSize = New-Object System.Drawing.Size($tabContentSize.Width, ($headerHeight + $tabContentSize.Height + $tabStripOverhead))
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text            = "AI Agent Workspace セットアップ v0.2"
+$form.Text            = "Coding Agent for IT セットアップ v0.2"
 $form.StartPosition   = "CenterScreen"
 $form.FormBorderStyle = "Sizable"
 $form.MaximizeBox     = $true
 $form.MinimumSize     = New-Object System.Drawing.Size(($contentSize.Width + 18), 300)
 $form.BackColor       = $clrBg
 $form.Font            = $fntUI
-$form.AutoScroll         = $true
-$form.AutoScrollMinSize  = $contentSize
 
 # Fit on screen: use the full content height when it fits, otherwise clamp to
-# the visible work area so the window (and its scrollbar) stay on-screen
-# instead of the previous fixed 600x1130 running off the bottom of smaller
-# displays with no way to reach the lower controls.
+# the visible work area so the window stays on-screen instead of running off
+# the bottom of smaller displays.
 $workArea  = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position).WorkingArea
 $formWidth  = $contentSize.Width + 18
 $formHeight = [Math]::Min($contentSize.Height + 40, $workArea.Height - 40)
@@ -195,7 +204,7 @@ $pnlHeader.BackColor = $clrHeader
 $form.Controls.Add($pnlHeader)
 
 $lblTitle = New-Object System.Windows.Forms.Label
-$lblTitle.Text      = "AI Agent Workspace"
+$lblTitle.Text      = "Coding Agent for IT"
 $lblTitle.Font      = $fntTitle
 $lblTitle.ForeColor = $clrHeaderFg
 $lblTitle.Location  = New-Object System.Drawing.Point(16, 10)
@@ -210,13 +219,38 @@ $lblSub.Location  = New-Object System.Drawing.Point(18, 50)
 $lblSub.AutoSize  = $true
 $pnlHeader.Controls.Add($lblSub)
 
+# ---- Tabs -------------------------------------------------------------
+# Tab 1 (shown by default): what every run needs — auth, install path, the
+# Install button, the log, and Close. Tab 2: tool detection / optional
+# installs and guardrail options, checked less often.
+$tabControl = New-Object System.Windows.Forms.TabControl
+$tabControl.Location = New-Object System.Drawing.Point(0, $headerHeight)
+$tabControl.Size     = New-Object System.Drawing.Size(600, ($tabContentSize.Height + $tabStripOverhead))
+$tabControl.Anchor   = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+$tabControl.Font     = $fntUI
+$form.Controls.Add($tabControl)
+
+$tabMain = New-Object System.Windows.Forms.TabPage
+$tabMain.Text              = "セットアップ"
+$tabMain.BackColor         = $clrBg
+$tabMain.AutoScroll        = $true
+$tabMain.AutoScrollMinSize = New-Object System.Drawing.Size(0, $tabContentSize.Height)
+$tabControl.TabPages.Add($tabMain)
+
+$tabOptions = New-Object System.Windows.Forms.TabPage
+$tabOptions.Text              = "詳細設定"
+$tabOptions.BackColor         = $clrBg
+$tabOptions.AutoScroll        = $true
+$tabOptions.AutoScrollMinSize = New-Object System.Drawing.Size(0, 470)
+$tabControl.TabPages.Add($tabOptions)
+
 # ---- Tool detection strip -------------------------------------------------
 $pnlDetect = New-Object System.Windows.Forms.Panel
-$pnlDetect.Location    = New-Object System.Drawing.Point(14, 96)
+$pnlDetect.Location    = New-Object System.Drawing.Point(14, 12)
 $pnlDetect.Size        = New-Object System.Drawing.Size(562, 68)
 $pnlDetect.BackColor   = $clrWhite
 $pnlDetect.BorderStyle = "FixedSingle"
-$form.Controls.Add($pnlDetect)
+$tabOptions.Controls.Add($pnlDetect)
 
 function New-StatusLabel([string]$text, [System.Drawing.Color]$color, [int]$x, [int]$y) {
     $lbl = New-Object System.Windows.Forms.Label
@@ -278,10 +312,10 @@ if (-not $hasNode) {
 # ---- Group: Runtime / AI tool installation --------------------------------
 $gbTools = New-Object System.Windows.Forms.GroupBox
 $gbTools.Text      = "  ランタイム / AI ツール  "
-$gbTools.Location  = New-Object System.Drawing.Point(14, 174)
+$gbTools.Location  = New-Object System.Drawing.Point(14, 92)
 $gbTools.Size      = New-Object System.Drawing.Size(562, 172)
 $gbTools.BackColor = $clrWhite
-$form.Controls.Add($gbTools)
+$tabOptions.Controls.Add($gbTools)
 
 # Node.js checkbox (winget) — prerequisite for Claude Code / Codex npm install
 $cbInstNode = New-Object System.Windows.Forms.CheckBox
@@ -400,10 +434,10 @@ Update-ClaudeCodexAvailability
 # Claude and Codex radios would fight each other.
 $gbAuth = New-Object System.Windows.Forms.GroupBox
 $gbAuth.Text      = "  認証設定  "
-$gbAuth.Location  = New-Object System.Drawing.Point(14, 356)
+$gbAuth.Location  = New-Object System.Drawing.Point(14, 12)
 $gbAuth.Size      = New-Object System.Drawing.Size(562, 184)
 $gbAuth.BackColor = $clrWhite
-$form.Controls.Add($gbAuth)
+$tabMain.Controls.Add($gbAuth)
 
 function New-AuthModeRadio([string]$text, [int]$x, [int]$y) {
     $rb = New-Object System.Windows.Forms.RadioButton
@@ -539,10 +573,10 @@ Update-CodexAuthMode
 # ---- Group: Install path --------------------------------------------------
 $gbPath = New-Object System.Windows.Forms.GroupBox
 $gbPath.Text      = "  インストール先  "
-$gbPath.Location  = New-Object System.Drawing.Point(14, 550)
+$gbPath.Location  = New-Object System.Drawing.Point(14, 208)
 $gbPath.Size      = New-Object System.Drawing.Size(562, 74)
 $gbPath.BackColor = $clrWhite
-$form.Controls.Add($gbPath)
+$tabMain.Controls.Add($gbPath)
 
 $lblPathLbl = New-Object System.Windows.Forms.Label
 $lblPathLbl.Text     = "インストール先フォルダ（ガードレール）:"
@@ -578,10 +612,10 @@ $btnBrowse.Add_Click({
 # ---- Group: Guardrail options ---------------------------------------------
 $gbOpts = New-Object System.Windows.Forms.GroupBox
 $gbOpts.Text      = "  ガードレール設定  "
-$gbOpts.Location  = New-Object System.Drawing.Point(14, 634)
+$gbOpts.Location  = New-Object System.Drawing.Point(14, 276)
 $gbOpts.Size      = New-Object System.Drawing.Size(562, 140)
 $gbOpts.BackColor = $clrWhite
-$form.Controls.Add($gbOpts)
+$tabOptions.Controls.Add($gbOpts)
 
 $cbClaude = New-Object System.Windows.Forms.CheckBox
 $cbClaude.Text     = "Claude Code の設定を配置する（managed-settings.json + hook）[推奨]"
@@ -605,7 +639,7 @@ $cbAddPath.Size     = New-Object System.Drawing.Size(540, 22)
 $gbOpts.Controls.Add($cbAddPath)
 
 $lblWorkspaceShortcut = New-Object System.Windows.Forms.Label
-$lblWorkspaceShortcut.Text      = "デスクトップに「AI Agent Workspace」ショートカットを作成します（起動後に Claude Code / Codex を選択できます）。"
+$lblWorkspaceShortcut.Text      = "デスクトップ・スタートメニューに「Coding Agent for IT」ショートカットを作成し、タスクバーへのピン留めも試みます（起動後に Claude Code / Codex を選択できます）。"
 $lblWorkspaceShortcut.Location  = New-Object System.Drawing.Point(12, 110)
 $lblWorkspaceShortcut.Size      = New-Object System.Drawing.Size(540, 22)
 $lblWorkspaceShortcut.ForeColor = [System.Drawing.Color]::DarkGreen
@@ -615,14 +649,14 @@ $lblNote = New-Object System.Windows.Forms.Label
 $lblNote.Text      = "Claude Code のバイナリ（~\.local\bin\claude.exe）と設定（~\.claude\）はツール側が管理するため、移動できません。"
 $lblNote.Font      = $fntSmall
 $lblNote.ForeColor = [System.Drawing.Color]::Gray
-$lblNote.Location  = New-Object System.Drawing.Point(14, 812)
+$lblNote.Location  = New-Object System.Drawing.Point(14, 428)
 $lblNote.Size      = New-Object System.Drawing.Size(562, 30)
-$form.Controls.Add($lblNote)
+$tabOptions.Controls.Add($lblNote)
 
 # ---- Install button -------------------------------------------------------
 $btnInstall = New-Object System.Windows.Forms.Button
 $btnInstall.Text      = "インストール実行"
-$btnInstall.Location  = New-Object System.Drawing.Point(14, 848)
+$btnInstall.Location  = New-Object System.Drawing.Point(14, 294)
 $btnInstall.Size      = New-Object System.Drawing.Size(562, 52)
 $btnInstall.Font      = $fntBtn
 $btnInstall.BackColor = $clrInstall
@@ -630,17 +664,17 @@ $btnInstall.ForeColor = $clrInstallFg
 $btnInstall.FlatStyle = "Flat"
 $btnInstall.FlatAppearance.BorderSize = 0
 $btnInstall.Cursor    = [System.Windows.Forms.Cursors]::Hand
-$form.Controls.Add($btnInstall)
+$tabMain.Controls.Add($btnInstall)
 
 # ---- Log area -------------------------------------------------------------
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text     = "インストールログ:"
-$lblLog.Location = New-Object System.Drawing.Point(14, 912)
+$lblLog.Location = New-Object System.Drawing.Point(14, 358)
 $lblLog.AutoSize = $true
-$form.Controls.Add($lblLog)
+$tabMain.Controls.Add($lblLog)
 
 $rtbLog = New-Object System.Windows.Forms.RichTextBox
-$rtbLog.Location    = New-Object System.Drawing.Point(14, 932)
+$rtbLog.Location    = New-Object System.Drawing.Point(14, 380)
 $rtbLog.Size        = New-Object System.Drawing.Size(562, 186)
 $rtbLog.Font        = $fntLog
 $rtbLog.ReadOnly    = $true
@@ -648,12 +682,12 @@ $rtbLog.BackColor   = $clrWhite
 $rtbLog.BorderStyle = "FixedSingle"
 $rtbLog.ScrollBars  = "Vertical"
 $rtbLog.Text        = "「インストール実行」をクリックするとここにログが表示されます。`n"
-$form.Controls.Add($rtbLog)
+$tabMain.Controls.Add($rtbLog)
 
 # ---- Done button ----------------------------------------------------------
 $btnDone = New-Object System.Windows.Forms.Button
 $btnDone.Text      = "（インストール完了後に有効になります）"
-$btnDone.Location  = New-Object System.Drawing.Point(14, 1130)
+$btnDone.Location  = New-Object System.Drawing.Point(14, 578)
 $btnDone.Size      = New-Object System.Drawing.Size(562, 38)
 $btnDone.Font      = $fntUI
 $btnDone.Enabled   = $false
@@ -661,7 +695,7 @@ $btnDone.FlatStyle = "Flat"
 $btnDone.BackColor = $clrDisabled
 $btnDone.ForeColor = $clrDisabledFg
 $btnDone.FlatAppearance.BorderSize = 0
-$form.Controls.Add($btnDone)
+$tabMain.Controls.Add($btnDone)
 
 $btnDone.Add_Click({ $form.Close() })
 
@@ -809,6 +843,8 @@ $btnInstall.Add_Click({
     $snap_addpath      = $cbAddPath.Checked
     $snap_workspaceShortcutScript = $workspaceShortcutScript
     $snap_workspaceRuntimeScript = $workspaceRuntimeScript
+    $snap_userProfile = $workspaceUserProfile
+    $snap_desktop = $workspaceDesktop
     $snap_hasNode      = $hasNode
     $snap_hasPython    = $hasPython
     $snap_hasGit       = $hasGit
@@ -855,7 +891,9 @@ $btnInstall.Add_Click({
             [string]$codexApiBaseUrl,
             [string]$workspaceShortcutScript,
             [string]$workspaceRuntimeScript,
-            [string]$repoRoot
+            [string]$repoRoot,
+            [Parameter(Mandatory = $true)][string]$userProfile,
+            [Parameter(Mandatory = $true)][string]$desktopPath
         )
 
         # winget installs write PATH to the registry but don't update the
@@ -904,7 +942,7 @@ $btnInstall.Add_Click({
             if ($null -eq $settings.env -or @($settings.env.PSObject.Properties).Count -eq 0) {
                 throw "Claude Code の認証設定に env がありません（空です）。Set Up 画面で生成した内容を貼り付けてください。"
             }
-            $claudeDir = Join-Path $env:USERPROFILE '.claude'
+            $claudeDir = Join-Path $userProfile '.claude'
             New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
             $target = Join-Path $claudeDir 'settings.json'
             Set-Content -LiteralPath $target -Value $json -Encoding UTF8
@@ -926,7 +964,7 @@ $btnInstall.Add_Click({
                 [Parameter(Mandatory = $true)][string]$Model,
                 [string]$BaseUrl
             )
-            $claudeDir = Join-Path $env:USERPROFILE '.claude'
+            $claudeDir = Join-Path $userProfile '.claude'
             New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
             $target = Join-Path $claudeDir 'settings.json'
 
@@ -963,7 +1001,7 @@ $btnInstall.Add_Click({
 
         function Invoke-CodexGatewayAuthentication {
             param([string]$Value)
-            $configPath = Join-Path $env:USERPROFILE ".codex\config.toml"
+            $configPath = Join-Path $userProfile ".codex\config.toml"
             $beforeHash = if (Test-Path -LiteralPath $configPath) { (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash } else { $null }
 
             $tempScript = Join-Path ([IO.Path]::GetTempPath()) ("aiagent_codex_auth_" + [guid]::NewGuid().ToString('N') + '.ps1')
@@ -1006,7 +1044,7 @@ $btnInstall.Add_Click({
                 [Parameter(Mandatory = $true)][string]$Model,
                 [string]$BaseUrl
             )
-            $codexDir = Join-Path $env:USERPROFILE ".codex"
+            $codexDir = Join-Path $userProfile ".codex"
             New-Item -ItemType Directory -Path $codexDir -Force | Out-Null
             $configPath = Join-Path $codexDir "config.toml"
 
@@ -1168,7 +1206,8 @@ $existing"
         $argList = @(
             "-NoProfile", "-ExecutionPolicy", "Bypass",
             "-File", $scriptPath,
-            "-InstallRoot", (Join-Path $installRoot "guardrails")
+            "-InstallRoot", (Join-Path $installRoot "guardrails"),
+            "-UserProfile", $userProfile
         )
         if ($optClaude) { $argList += "-ConfigureClaude" }
         if ($optCodex)  { $argList += "-ConfigureCodex" }
@@ -1179,14 +1218,14 @@ $existing"
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workspaceRuntimeScript -WorkspaceRoot $installRoot -PackageRoot $repoRoot 2>&1
         if ($LASTEXITCODE -ne 0) { throw "ワークスペース資産の配置に失敗しました" }
 
-        # ---- Step 6: AI Agent Workspace shortcut ----
+        # ---- Step 6: Coding Agent for IT shortcut ----
         Write-Output ""
-        Write-Output "=== AI Agent Workspace ショートカットの作成 ==="
+        Write-Output "=== Coding Agent for IT ショートカットの作成 ==="
         try {
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workspaceShortcutScript -WorkspaceRoot $installRoot 2>&1
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workspaceShortcutScript -WorkspaceRoot $installRoot -DesktopPath $desktopPath 2>&1
             if ($LASTEXITCODE -ne 0) { throw "ショートカット作成スクリプトが exit $LASTEXITCODE で終了しました。" }
         } catch {
-            Write-Output "WARNING: AI Agent Workspace のショートカット作成に失敗しました: $($_.Exception.Message)"
+            Write-Output "WARNING: Coding Agent for IT のショートカット作成に失敗しました: $($_.Exception.Message)"
         }
 
         # Register the installed silent mount launcher after its configuration
@@ -1206,7 +1245,7 @@ $existing"
                     $snap_claudeApiKey, $snap_claudeApiModel, $snap_claudeApiBaseUrl,
                     $snap_codexAuthMode, $snap_codexAuth,
                     $snap_codexApiKey, $snap_codexApiModel, $snap_codexApiBaseUrl,
-                    $snap_workspaceShortcutScript, $snap_workspaceRuntimeScript, $repoRoot
+                    $snap_workspaceShortcutScript, $snap_workspaceRuntimeScript, $repoRoot, $snap_userProfile, $snap_desktop
 
     # Poll timer
     $script:pollTimer = New-Object System.Windows.Forms.Timer
@@ -1241,7 +1280,7 @@ $existing"
                 AppendLog ""
                 AppendLog "  次のステップ:" ([System.Drawing.Color]::DarkGreen)
                 AppendLog "  1. Claude Code, Codexが立ち上がっていたら終了してください。" ([System.Drawing.Color]::DarkGreen)
-                AppendLog "  2. AI Agent Workspaceのアイコンをダブルクリックすると開始できます。" ([System.Drawing.Color]::DarkGreen)
+                AppendLog "  2. Coding Agent for ITのアイコンをダブルクリックすると開始できます。" ([System.Drawing.Color]::DarkGreen)
                 AppendLog "============================================" ([System.Drawing.Color]::DarkGreen)
                 $btnDone.Text      = "閉じる"
                 $btnDone.BackColor = $clrDone

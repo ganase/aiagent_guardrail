@@ -1,4 +1,4 @@
-﻿# Codex enterprise requirements template
+# Codex enterprise requirements template
 # This file contains organization-managed settings used by the standard installer.
 
 [windows]
@@ -18,3 +18,15 @@ command_windows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AIA
 [[hooks.Stop.hooks]]
 type = "command"
 command_windows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AIAGENT_GUARDRAIL_HOME%\\hooks\\record_ai_turn.ps1" -Tool Codex'
+[[hooks.PermissionRequest]]
+matcher = "^Bash$"
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command_windows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AIAGENT_GUARDRAIL_HOME%\\hooks\\approve_safe_request.ps1" -Tool Codex'
+[[hooks.PermissionRequest]]
+matcher = "Read|Glob|Grep"
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command_windows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AIAGENT_GUARDRAIL_HOME%\\hooks\\approve_safe_request.ps1" -Tool Codex'

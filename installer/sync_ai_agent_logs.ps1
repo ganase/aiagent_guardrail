@@ -23,7 +23,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$auditRoot = Join-Path $BoxTarget (Join-Path "Sandbox" (Join-Path $SandboxUser "AI-Agent-Audit"))
+$auditRoot = Join-Path $BoxTarget (Join-Path "Sandbox" (Join-Path $SandboxUser "CodingAgentForIT-Audit"))
 $destinationRoot = Join-Path $auditRoot $Tool
 $excludedFileNames = @("auth.json", ".credentials.json", "config.toml")
 $copiedFiles = 0

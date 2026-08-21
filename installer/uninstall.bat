@@ -2,7 +2,7 @@
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
 
-title AI Agent Workspace Uninstall
+title Coding Agent for IT Uninstall
 
 rem This script is intentionally destructive and removes this work environment.
 rem It removes the tools installed by SETUP.bat and their user-level remnants.
@@ -11,7 +11,7 @@ rem authentication settings and credentials; this is intentional.
 
 echo.
 echo ============================================================
-echo   AI Agent Workspace Uninstall
+echo   Coding Agent for IT Uninstall
 echo ============================================================
 echo Run this file with "Run as administrator" when Node.js, Python,
 echo or Git was installed for all users. Their uninstallers may require UAC.
@@ -71,12 +71,28 @@ call :RemoveTree "%LOCALAPPDATA%\pip\Cache"
 call :RemoveTree "%APPDATA%\Python"
 if defined AIAGENT_GUARDRAIL_HOME call :RemoveTree "%AIAGENT_GUARDRAIL_HOME%"
 call :RemoveTree "%LOCALAPPDATA%\AIAgentGuardrails"
-call :RemoveTree "%USERPROFILE%\AIAgent_Workspace"
+call :RemoveTree "%USERPROFILE%\CodingAgentForIT"
+
+rem Best-effort taskbar unpin, before the shortcut file itself is removed
+rem below. There is no supported public API for this and recent Windows 11
+rem builds may not expose the verb at all; a failure here must not stop the
+rem rest of the uninstall.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $s = New-Object -ComObject Shell.Application; $f = $s.Namespace('%USERPROFILE%\Desktop'); $i = $f.ParseName('Coding Agent for IT.lnk'); if ($i) { $i.InvokeVerb('taskbarunpin') } } catch {}" >nul 2>&1
+
 call :RemoveFile "%USERPROFILE%\Desktop\Claude Code.lnk"
 call :RemoveFile "%USERPROFILE%\Desktop\Codex.lnk"
 call :RemoveFile "%USERPROFILE%\Desktop\AI Coding Workspace.lnk"
 call :RemoveFile "%USERPROFILE%\Desktop\AI Agent Workspace.lnk"
+call :RemoveFile "%USERPROFILE%\Desktop\Coding Agent@IT.lnk"
+call :RemoveFile "%USERPROFILE%\Desktop\Coding Agent for IT.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Claude Code.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Codex.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\AI Coding Workspace.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\AI Agent Workspace.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Coding Agent@IT.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Coding Agent for IT.lnk"
 call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\AIAgent_Workspace_BoxDriveMount.lnk"
+call :RemoveFile "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\CodingAgentForIT_BoxDriveMount.lnk"
 
 rem Undo the shared-drive subst mapping and drop its saved configuration
 rem (installer\box_mount.local.cmd, written by configure_box_mount.ps1).

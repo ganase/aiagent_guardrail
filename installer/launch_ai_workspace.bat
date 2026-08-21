@@ -41,7 +41,7 @@ if errorlevel 1 (
     echo ERROR: Could not enter the selected folder.
     goto :End
 )
-set "AI_AGENT_AUDIT_ROOT=%BOX_TARGET%\Sandbox\%SANDBOX_USER%\AI-Agent-Audit"
+set "AI_AGENT_AUDIT_ROOT=%BOX_TARGET%\Sandbox\%SANDBOX_USER%\CodingAgentForIT-Audit"
 call :SyncAuditLogs
 if /i "%TOOL_COMMAND%"=="codex" (
     call codex --cd "%SELECTED_REPOSITORY%"

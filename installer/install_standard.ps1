@@ -1,5 +1,6 @@
 ﻿param(
   [string]$InstallRoot,
+  [string]$UserProfile,
   [switch]$ConfigureClaude,
   [switch]$ConfigureCodex,
   [switch]$AddWrappersToUserPath
@@ -81,7 +82,9 @@ function Set-CodexWindowsSection {
   $templateRaw = Get-Content $TemplatePath -Raw
   $windowsIdx = $templateRaw.IndexOf("[windows]")
   if ($windowsIdx -lt 0) { throw "Template does not contain a [windows] section: $TemplatePath" }
-  $newBlock = "$marker`r`n$($templateRaw.Substring($windowsIdx).TrimEnd())`r`n"
+  $newBlock = "$marker
+$($templateRaw.Substring($windowsIdx).TrimEnd())
+"
   if (Test-Path $ConfigPath) {
     Copy-Item $ConfigPath "$ConfigPath.bak.$(Get-Date -Format yyyyMMddHHmmssfff)"
     $existing = Get-Content $ConfigPath -Raw
@@ -91,11 +94,14 @@ function Set-CodexWindowsSection {
       $existing = [regex]::Replace($existing, '(?ms)^\[windows\].*?(?=^\[|\z)', '')
     }
     $existing = $existing.TrimEnd()
-    $final = if ($existing) { "$existing`r`n`r`n$newBlock" } else { $newBlock }
+    $final = if ($existing) { "$existing
+
+$newBlock" } else { $newBlock }
   } else { $final = $newBlock }
   Set-Content -Path $ConfigPath -Encoding UTF8 -Value $final -NoNewline
 }
 $IsAdmin = Test-IsAdmin
+if (-not $UserProfile) { $UserProfile = $env:USERPROFILE }
 if (-not $InstallRoot) {
   if ($IsAdmin) { $InstallRoot = Join-Path $env:ProgramFiles "AIAgentGuardrails" }
   else { $InstallRoot = Join-Path $env:LOCALAPPDATA "AIAgentGuardrails" }
@@ -174,7 +180,7 @@ if ($ConfigureClaude) {
 }
 
 if ($ConfigureCodex) {
-  $CodexDir = Join-Path $env:USERPROFILE ".codex"
+  $CodexDir = Join-Path $UserProfile ".codex"
   New-Item -ItemType Directory -Path $CodexDir -Force | Out-Null
   $configTarget = Join-Path $CodexDir "config.toml"
   Set-CodexWindowsSection -ConfigPath $configTarget -TemplatePath (Join-Path $InstallRoot "config\codex_config.template.toml")

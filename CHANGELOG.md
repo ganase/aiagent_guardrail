@@ -4,11 +4,13 @@
 
 ### New Features（ローカライズの汎用化）
 
-- **AI Agent 操作ログの Box 同期**: `launch_ai_workspace.bat` が Codex / Claude Code の起動前・終了後に `sync_ai_agent_logs.ps1` を実行し、履歴・セッション・診断ログを `Sandbox\<ユーザー>\AI-Agent-Audit` へ一方向同期する。`auth.json`、`.credentials.json`、`config.toml` はコピー対象外。強制終了などで終了後同期が行えなかった場合は、次回起動前に補完同期する。
+- **AI Agent 操作ログの Box 同期**: `launch_ai_workspace.bat` が Codex / Claude Code の起動前・終了後に `sync_ai_agent_logs.ps1` を実行し、履歴・セッション・診断ログを `Sandbox\<ユーザー>\CodingAgentForIT-Audit` へ一方向同期する。`auth.json`、`.credentials.json`、`config.toml` はコピー対象外。強制終了などで終了後同期が行えなかった場合は、次回起動前に補完同期する。
 
 - **認証設定の2モード化**: `installer\setup_wizard.ps1` の認証設定欄に、Claude Code / Codex それぞれ「Gateway形式で貼り付け」（組織指定の認証サービス 専用フォーマット、既存動作）と「APIを直接指定」（Anthropic / OpenAI 互換の APIキー・モデル名・Base URL[任意]を入力）のラジオボタンを追加。API方式はGateway方式のような任意コード実行・丸ごと上書きを行わず、既存設定への差分マージ（Claude: `settings.json` の `env` 内3キーのみ）またはマーカー管理された追記（Codex: `config.toml` 先頭に専用ブロックをprepend）で書き込む。
 - **共有ドライブマウントの指定可能化**: `installer\configure_box_mount.ps1`（新規）が `SETUP.bat` 実行時に一度だけ、共有フォルダのパスとドライブ文字を確認するダイアログを表示し、`installer\box_mount.local.cmd`（gitignore対象）に保存する。以後は同ファイルを `mount_box_drive.bat` / `register_box_startup.ps1` / `launch_ai_workspace.bat` が共通で読み込む。従来ハードコードされていた `<共有ワークスペース>` という社内固有フォルダ名は削除。「使用しない」を選択すれば共有ドライブ連携自体を無効化できる。
 - `installer\uninstall.bat`: 共有ドライブの `subst` 解除と `box_mount.local.cmd` の削除を追加。
+- **製品名を「Coding Agent for IT」に変更**: 「AI Agent Workspace」表示名、インストール先フォルダ名（`AIAgent_Workspace` → `CodingAgentForIT`）、監査ログフォルダ名（`AI-Agent-Audit` → `CodingAgentForIT-Audit`）を全面的に改称。ガードレール機構自体の名称「AI Agent Guardrail」および `AIAGENT_` 環境変数プレフィックスは対象外（変更なし）。
+- **ショートカットをスタートメニューにも作成**: `installer\register_workspace_shortcut.ps1` がデスクトップに加えてスタートメニュー（`%APPDATA%\Microsoft\Windows\Start Menu\Programs`）にも同名のショートカットを作成する。あわせてタスクバーへのピン留めをベストエフォートで試行（Windows にピン留めの公式APIが無く、Windows 11 の一部ビルドでは自動化できない場合がある）。`installer\uninstall.bat` は両方のショートカットとタスクバーのピン留めの解除を試みる。
 
 ### Bug Fixes（実装 vs 設計文書の不整合）
 

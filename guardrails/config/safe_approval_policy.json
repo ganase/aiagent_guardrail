@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "0.1.0",
+  "owner": "AI Governance Team",
+  "description": "Codex / Claude CodeのPermissionRequestで自動許可する、限定的な読込み・参照操作のポリシー。ここにない操作は通常の確認フローを維持する。",
+  "enabled": true,
+  "read_only_tools": ["Read", "Glob", "Grep"],
+  "protected_path_patterns": [
+    "\\.env(?:\\.|[\\\"\\\\/]|$)",
+    "secrets?(?:[\\\"\\\\/]|$)",
+    "\\.(pem|key)(?:[\\\"\\\\/]|$)",
+    "id_(rsa|ed25519)"
+  ],
+  "safe_bash_patterns": [
+    "^git\\s+status(?:\\s+--(?:short|branch|porcelain(?:=v[12])?))*\\s*$",
+    "^git\\s+diff(?:\\s+--(?:cached|staged|stat|name-only|name-status|check))*\\s*$",
+    "^git\\s+log(?:\\s+--[A-Za-z0-9=._/-]+)*\\s*$",
+    "^git\\s+show\\s+--stat\\s*$",
+    "^git\\s+rev-parse\\s+--show-toplevel\\s*$",
+    "^git\\s+branch\\s+--show-current\\s*$",
+    "^git\\s+remote\\s+-v\\s*$",
+    "^git\\s+ls-files(?:\\s+--[A-Za-z0-9=._/-]+)*\\s*$",
+    "^(?:git|python|python3|node|npm|codex|claude)\\s+--version\\s*$"
+  ]
+}

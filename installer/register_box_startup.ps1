@@ -33,9 +33,16 @@ if (-not (Test-Path $vbsPath)) {
 }
 
 $startupDir   = [Environment]::GetFolderPath("Startup")
-$shortcutPath = Join-Path $startupDir "AIAgent_Workspace_BoxDriveMount.lnk"
+$shortcutPath = Join-Path $startupDir "CodingAgentForIT_BoxDriveMount.lnk"
 $wscriptExe   = Join-Path $env:WINDIR "System32\wscript.exe"
 $expectedArgs = "`"$vbsPath`""
+
+# The shortcut was renamed; remove the old name so an upgraded install does
+# not end up auto-mounting twice at logon.
+$legacyShortcutPath = Join-Path $startupDir "AIAgent_Workspace_BoxDriveMount.lnk"
+if (Test-Path -LiteralPath $legacyShortcutPath) {
+    Remove-Item -LiteralPath $legacyShortcutPath -Force
+}
 
 $needsUpdate = $true
 if (Test-Path $shortcutPath) {

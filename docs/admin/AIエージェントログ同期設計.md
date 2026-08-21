@@ -6,7 +6,7 @@ Codex と Claude Code の業務操作ログを Box の個人用 Sandbox に保�
 
 ## 保存先
 
-`<Box共有フォルダ>\Sandbox\<Windowsユーザー名>\AI-Agent-Audit\` 配下に、ツール別に保存する。リポジトリ外のため Git の追跡対象にはしない。
+`<Box共有フォルダ>\Sandbox\<Windowsユーザー名>\CodingAgentForIT-Audit\` 配下に、ツール別に保存する。リポジトリ外のため Git の追跡対象にはしない。
 
 ## 同期対象
 

@@ -39,5 +39,5 @@ AIを使う方が読む文書です。まず**利用ルールブック**を確�
 | ファイル | 内容 |
 |---|---|
 | [ガードレール_システム構成図.html](ガードレール_システム構成図.html) | システム構成図・利用者ワークフロー・導入手順を1枚にまとめた補助資料（ブラウザで開く） |
-| [AIAgent_Utilize_model.svg](AIAgent_Utilize_model.svg) | 活用度モデル（Level 1–3）図 |
-| [AIAgent_文書構成.svg](AIAgent_文書構成.svg) | 文書構成図 |
+| [Coding_Agent_for_IT_Utilize_model.svg](Coding_Agent_for_IT_Utilize_model.svg) | 活用度モデル（Level 1–3）図 |
+| [Coding_Agent_for_IT_文書構成.svg](Coding_Agent_for_IT_文書構成.svg) | 文書構成図 |
